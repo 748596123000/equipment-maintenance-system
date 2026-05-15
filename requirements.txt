@@ -1,0 +1,42 @@
+# 设备检修知识检索与作业系统 - Python依赖清单
+# 适配：银河麒麟高级服务器版 V10/V11 + LoongArch架构
+#
+# LoongArch兼容性说明：
+# - chromadb: 使用duckdb+parquet后端替代默认的hnswlib
+# - pymupdf: 需要系统安装libmupdf-dev
+# - numpy/scipy: LoongArch有预编译wheel，如无则需源码编译
+
+# Web框架
+streamlit==1.40.0
+fastapi==0.115.0
+uvicorn==0.32.0
+
+# AI框架
+langchain==0.3.7
+langchain-community==0.3.7
+
+# 向量数据库（LoongArch使用duckdb+parquet后端）
+chromadb==0.5.0
+duckdb==0.10.0
+
+# PDF解析
+pymupdf==1.24.10
+pdfplumber==0.11.4
+
+# 大模型服务
+openai==1.57.0
+dashscope==1.20.14
+
+# 数据模型
+pydantic==2.10.0
+pydantic-settings==2.6.0
+
+# 安全
+passlib[bcrypt]==1.7.4
+
+# 工具库
+python-multipart==0.0.17
+pillow==11.0.0
+plotly==5.24.1
+httpx==0.28.1
+python-dotenv==1.0.1

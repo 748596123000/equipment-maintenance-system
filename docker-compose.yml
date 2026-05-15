@@ -1,0 +1,44 @@
+# 设备检修知识检索与作业系统 Docker编排文件
+# 适配银河麒麟高级服务器版 + LoongArch架构
+#
+# 注意事项：
+# 1. 银河麒麟需要使用 kylin-docker-ce 而非官方Docker CE
+# 2. LoongArch架构不支持Docker Hub官方镜像，需使用龙芯云平台提供的镜像
+# 3. 推荐使用 deploy/kylin_setup.sh 直接部署方案
+
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: equipment-maintenance-system
+    ports:
+      - "8000:8000"   # FastAPI后端
+      - "8501:8501"   # Streamlit前端
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-your_api_key_here}
+      - LLM_MODEL=${LLM_MODEL:-qwen-max}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v3}
+      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - SQLITE_DB_PATH=/app/data/app.db
+      - UPLOAD_DIR=/app/data/pdfs
+      - IMAGE_DIR=/app/data/images
+      # LoongArch适配
+      - CHROMA_DB_IMPL=duckdb+parquet
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'

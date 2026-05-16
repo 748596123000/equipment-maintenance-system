@@ -155,7 +155,7 @@
 1. **克隆仓库**
 
 ```bash
-git clone https://github.com/yourusername/equipment-maintenance-system.git
+git clone https://github.com/748596123000/equipment-maintenance-system.git
 cd equipment-maintenance-system
 ```
 

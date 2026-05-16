@@ -33,6 +33,7 @@ pydantic-settings==2.6.0
 
 # 安全
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 
 # 工具库
 python-multipart==0.0.17
@@ -40,3 +41,4 @@ pillow==11.0.0
 plotly==5.24.1
 httpx==0.28.1
 python-dotenv==1.0.1
+cachetools==5.3.3

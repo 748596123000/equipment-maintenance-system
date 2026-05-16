@@ -58,7 +58,7 @@ class Settings(BaseSettings):
         description="ChromaDB默认集合名称"
     )
     EMBEDDING_DIMENSION: int = Field(
-        default=1536,
+        default=1024,
         description="向量维度"
     )
 
@@ -158,6 +158,22 @@ class Settings(BaseSettings):
         ]
         for directory in directories:
             Path(directory).mkdir(parents=True, exist_ok=True)
+
+    def load_from_database(self):
+        try:
+            from app.models.database import get_database
+            db = get_database()
+            config_map = {
+                "llm_model": ("LLM_MODEL", str),
+                "llm_temperature": ("LLM_TEMPERATURE", float),
+                "llm_max_tokens": ("LLM_MAX_TOKENS", int),
+            }
+            for db_key, (attr_name, type_func) in config_map.items():
+                value = db.get_config(db_key)
+                if value is not None:
+                    setattr(self, attr_name, type_func(value))
+        except Exception:
+            pass
 
 
 # 全局配置单例

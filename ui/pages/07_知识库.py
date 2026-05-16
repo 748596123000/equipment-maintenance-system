@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from ui.components.preview import render_pdf_preview
-from ui.components.common import hide_login_nav
+from ui.components.common import hide_login_nav, get_api_base, get_user_headers, require_login, init_api_base, safe_error_msg
 
 st.set_page_config(
     page_title="知识库 - 设备检修知识系统",
@@ -20,28 +20,11 @@ st.set_page_config(
 )
 
 hide_login_nav()
-
-# ========== 登录检查 ==========
-if "user_info" not in st.session_state:
-    st.switch_page("pages/00_登录.py")
-    st.stop()
-
-
-def get_api_base() -> str:
-    """获取API基础地址"""
-    return st.session_state.get("api_base_url", "http://localhost:8000/api/v1")
-
-
-def get_user_headers() -> dict:
-    """获取包含用户信息的请求头"""
-    user_info = st.session_state.get("user_info", {})
-    return {"Authorization": f"Bearer {user_info.get('token', '')}"}
+require_login()
 
 
 def main():
-    """页面主函数"""
-    if "api_base_url" not in st.session_state:
-        st.session_state.api_base_url = "http://localhost:8000/api/v1"
+    init_api_base()
 
     st.title("📚 知识库")
     st.markdown("浏览设备检修知识库中已入库的文档，支持在线预览。")
@@ -65,6 +48,7 @@ def main():
     try:
         resp = requests.get(
             f"{get_api_base()}/upload/list",
+            headers=get_user_headers(),
             params={"page": 1, "page_size": 100},
             timeout=30,
         )
@@ -161,7 +145,7 @@ def main():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务，请确认后端已启动")
     except Exception as e:
-        st.error(f"获取文档列表出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 if __name__ == "__main__":

@@ -324,14 +324,18 @@ async def batch_upload_pdfs(
 @router.get("/list", summary="获取文档列表")
 async def list_documents(
     category: str = Query(default=None, description="按分类筛选"),
+    status: str = Query(default=None, description="按状态筛选"),
+    keyword: str = Query(default=None, description="按文件名搜索"),
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页数量"),
 ):
     """
-    获取已上传的文档列表，支持分页和分类筛选
+    获取已上传的文档列表，支持分页、分类、状态和关键词筛选
 
     Args:
         category: 文档分类筛选条件
+        status: 文档状态筛选条件
+        keyword: 文件名关键词搜索
         page: 页码
         page_size: 每页数量
 
@@ -344,6 +348,13 @@ async def list_documents(
     # 格式化文档列表
     documents = []
     for doc in result["documents"]:
+        uploader_name = ""
+        uploader_id = doc.get("uploader_id", "")
+        if uploader_id:
+            uploader = db.get_user_by_id(uploader_id)
+            if uploader:
+                uploader_name = uploader.get("username", uploader_id[:8])
+
         documents.append({
             "document_id": doc["id"],
             "filename": doc["filename"],
@@ -355,13 +366,21 @@ async def list_documents(
             "chunk_count": doc.get("chunk_count", 0),
             "status": doc.get("status", "pending"),
             "uploader_id": doc.get("uploader_id", ""),
+            "uploader_name": uploader_name,
             "reviewer_id": doc.get("reviewer_id", ""),
             "review_comment": doc.get("review_comment", ""),
             "reviewed_at": doc.get("reviewed_at", ""),
             "created_at": doc.get("upload_time", ""),
         })
 
-    total = result["total"]
+    if status:
+        documents = [d for d in documents if d["status"] == status]
+    if keyword:
+        documents = [d for d in documents if keyword.lower() in d["filename"].lower()]
+    if category:
+        documents = [d for d in documents if d.get("category", "通用") == category]
+
+    total = len(documents) if (status or keyword or category) else result["total"]
     pagination = calculate_pagination(page, page_size, total)
 
     return {
@@ -419,6 +438,40 @@ async def list_my_documents(
             "documents": documents,
             "pagination": pagination,
         }
+    }
+
+
+@router.get("/my/stats", summary="获取当前用户上传统计")
+async def my_upload_stats(current_user: dict = Depends(get_current_user)):
+    """
+    获取当前登录用户的上传统计信息
+
+    Returns:
+        dict: 各状态的文档数量统计
+    """
+    db = get_database()
+    result = db.list_documents_by_uploader(uploader_id=current_user["id"], page=1, page_size=1000)
+    documents = result["documents"]
+
+    stats = {
+        "total": len(documents),
+        "pending": 0,
+        "approved": 0,
+        "rejected": 0,
+        "processing": 0,
+        "completed": 0,
+        "parsed": 0,
+        "failed": 0,
+    }
+    for doc in documents:
+        status = doc.get("status", "")
+        if status in stats:
+            stats[status] += 1
+
+    return {
+        "code": 200,
+        "message": "查询成功",
+        "data": stats,
     }
 
 
@@ -586,7 +639,7 @@ async def reject_document(
         detail=f"document_id={document_id}, filename={doc['filename']}, comment={request.comment}",
     )
 
-    logger.info(f"文档审批拒绝: {document_id} ({filename})")
+    logger.info(f"文档审批拒绝: {document_id} ({doc['filename']})")
 
     return {
         "code": 200,
@@ -677,7 +730,7 @@ async def preview_pdf(document_id: str):
         raise
     except Exception as e:
         logger.error(f"PDF预览失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"PDF预览失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="PDF预览失败，请稍后重试")
 
 
 # ========== PDF原文档在线预览接口 ==========
@@ -762,7 +815,7 @@ async def view_pdf(document_id: str, current_user: dict = Depends(get_current_us
         raise
     except Exception as e:
         logger.error(f"[PDF预览] 异常: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"PDF文件读取失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="PDF文件读取失败，请稍后重试")
 
 
 # ========== 删除接口 ==========

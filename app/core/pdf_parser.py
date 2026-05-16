@@ -15,6 +15,7 @@ import os
 import re
 import base64
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -637,54 +638,56 @@ class PDFParser:
                 page = doc[page_num - 1]
                 image_list = page.get_images(full=True)
 
-                # 每页最多处理3张图片
                 images_to_process = image_list[:max_images_per_page]
 
-                for img_index, img_info in enumerate(images_to_process):
+                def _describe_image_task(img_data, page_num, img_idx):
                     try:
-                        xref = img_info[0]
+                        xref = img_data[0]
                         base_image = doc.extract_image(xref)
 
                         if base_image is None:
-                            continue
+                            return None
 
                         image_bytes = base_image.get("image")
                         if not image_bytes or len(image_bytes) < 100:
-                            continue
+                            return None
 
-                        # 保存图片到文件
                         image_format = base_image.get("ext", "png")
-                        image_filename = f"{filename_base}_p{page_num}_img{img_index}.{image_format}"
+                        image_filename = f"{filename_base}_p{page_num}_img{img_idx}.{image_format}"
                         image_path = os.path.join(output_dir, image_filename)
 
                         with open(image_path, "wb") as f:
                             f.write(image_bytes)
 
-                        # 调用通义千问多模态模型生成描述
                         description = self._describe_image(image_bytes, image_format)
 
                         if description:
-                            # 将图片描述作为特殊段落
-                            image_descriptions.append({
+                            return {
                                 "page": page_num,
-                                "title": f"[图片描述] 第{page_num}页图片{img_index + 1}",
+                                "title": f"[图片描述] 第{page_num}页图片{img_idx + 1}",
                                 "content": f"[图片描述] {description}",
                                 "level": 0,
                                 "metadata": {
                                     "type": "image",
                                     "page": page_num,
                                     "image_path": image_path,
-                                    "image_index": img_index,
+                                    "image_index": img_idx,
                                 },
-                            })
-                            logger.info(f"已生成第{page_num}页第{img_index + 1}张图片的描述")
-
-                        # 避免API调用过于频繁，每次调用间隔1秒
-                        time.sleep(1)
-
+                            }
+                        return None
                     except Exception as e:
-                        logger.debug(f"处理第{page_num}页第{img_index}张图片失败: {e}")
-                        continue
+                        logger.debug(f"处理第{page_num}页第{img_idx}张图片失败: {e}")
+                        return None
+
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    futures = []
+                    for img_index, img_info in enumerate(images_to_process):
+                        futures.append(executor.submit(_describe_image_task, img_info, page_num, img_index))
+                    for future in as_completed(futures):
+                        result = future.result()
+                        if result:
+                            image_descriptions.append(result)
+                            logger.info(f"已生成第{result['page']}页第{result['metadata']['image_index'] + 1}张图片的描述")
 
             except Exception as e:
                 logger.error(f"处理第{page_num}页图片时失败: {e}", exc_info=True)

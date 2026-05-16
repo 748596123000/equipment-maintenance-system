@@ -15,16 +15,16 @@ import logging
 from difflib import SequenceMatcher
 from typing import Dict, Generator, List, Optional
 
+from cachetools import LRUCache
+
 from app.config import settings
 from app.services.llm_service import get_llm_service
 from app.core.retriever import get_retriever, KnowledgeRetriever
 
 logger = logging.getLogger(__name__)
 
-# 对话上下文缓存：相似问题复用上一次检索结果
-_last_query: Optional[str] = None
-_last_results: Optional[List[Dict]] = None
-SIMILARITY_THRESHOLD = 0.8  # 相似度阈值，超过此值复用上次检索结果
+_last_results: LRUCache = LRUCache(maxsize=100)
+SIMILARITY_THRESHOLD = 0.8
 
 
 class RAGEngine:
@@ -120,16 +120,20 @@ class RAGEngine:
         Returns:
             dict: 包含 answer, confidence, sources 的字典
         """
-        global _last_query, _last_results
+        global _last_results
 
-        # 步骤1: 检索相关文档（相似问题复用缓存）
-        if _last_query and self._similarity(question, _last_query) > SIMILARITY_THRESHOLD:
+        cached_result = None
+        for cached_query in _last_results:
+            if self._similarity(question, cached_query) > SIMILARITY_THRESHOLD:
+                cached_result = _last_results[cached_query]
+                break
+
+        if cached_result is not None:
             logger.info(f"问题相似度 > {SIMILARITY_THRESHOLD}，复用上次检索结果")
-            search_results = _last_results or []
+            search_results = cached_result
         else:
             search_results = self._retrieve(question, search_mode, top_k)
-            _last_query = question
-            _last_results = search_results
+            _last_results[question] = search_results
 
         # 步骤2: 构建上下文
         context = self._build_context(search_results)

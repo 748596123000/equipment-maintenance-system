@@ -122,6 +122,11 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=100, description="密码（至少6个字符）")
 
 
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=1, max_length=100, description="旧密码")
+    new_password: str = Field(..., min_length=6, max_length=100, description="新密码（至少6个字符）")
+
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -184,13 +189,13 @@ async def login(request: LoginRequest):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     if not user.get("is_active"):
-        raise HTTPException(status_code=403, detail="账号已被禁用，请联系管理员")
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     user_status = user.get("status", "active")
     if user_status == "pending_approval":
-        raise HTTPException(status_code=403, detail="账号待管理员审批")
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
     elif user_status == "rejected":
-        raise HTTPException(status_code=403, detail="账号注册已被拒绝，请联系管理员")
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     if not user["password_hash"].startswith("$2b$") and not user["password_hash"].startswith("$2a$"):
         new_hash = hash_password(request.password)
@@ -261,6 +266,18 @@ async def register(request: RegisterRequest):
     except Exception as e:
         logger.error(f"用户注册失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="注册失败，请稍后重试")
+
+
+@router.put("/password", summary="修改密码")
+async def change_password(request: ChangePasswordRequest, current_user: dict = Depends(get_current_user)):
+    db = get_database()
+    user = db.get_user_by_username_all(current_user["username"])
+    if not user or not verify_password(request.old_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="旧密码不正确")
+    new_hash = hash_password(request.new_password)
+    db.update_user(user_id=current_user["id"], password_hash=new_hash)
+    db.save_log(user_id=current_user["id"], action="修改密码", detail="")
+    return {"code": 200, "message": "密码修改成功", "data": None}
 
 
 @router.get("/me", summary="获取当前用户信息")

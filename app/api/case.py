@@ -91,15 +91,17 @@ async def create_case(request: CaseCreateRequest, current_user: dict = Depends(g
         conn = db.get_connection()
         conn.execute(
             """INSERT INTO cases (id, title, description, device_model, fault_type, solution,
+               fault_analysis, repair_process, lessons_learned, tags,
                author_id, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (case_id, request.title, request.fault_description, request.equipment_model,
              "", request.repair_result,
-             current_user["id"], "pending", now, now),
+             request.fault_analysis, request.repair_process, request.lessons_learned,
+             json.dumps(request.tags, ensure_ascii=False) if request.tags else "",
+             current_user["id"], "pending_review", now, now),
         )
         conn.commit()
 
-        # 记录日志
         db.save_log(
             user_id=current_user["id"],
             action=f"创建检修案例: {request.title}",
@@ -112,7 +114,7 @@ async def create_case(request: CaseCreateRequest, current_user: dict = Depends(g
             "data": {
                 "case_id": case_id,
                 "title": request.title,
-                "status": "pending",
+                "status": "pending_review",
                 "created_at": now,
             }
         }
@@ -223,6 +225,10 @@ async def get_case(case_id: str):
             "device_model": row["device_model"],
             "fault_type": row["fault_type"],
             "solution": row["solution"],
+            "fault_analysis": row["fault_analysis"] if "fault_analysis" in row.keys() else "",
+            "repair_process": row["repair_process"] if "repair_process" in row.keys() else "",
+            "lessons_learned": row["lessons_learned"] if "lessons_learned" in row.keys() else "",
+            "tags": json.loads(row["tags"]) if "tags" in row.keys() and row["tags"] else [],
             "author_id": row["author_id"],
             "status": row["status"],
             "created_at": row["created_at"],
@@ -264,9 +270,21 @@ async def update_case(case_id: str, request: CaseUpdateRequest, current_user: di
     if request.fault_description is not None:
         update_fields.append("description = ?")
         update_values.append(request.fault_description)
+    if request.fault_analysis is not None:
+        update_fields.append("fault_analysis = ?")
+        update_values.append(request.fault_analysis)
+    if request.repair_process is not None:
+        update_fields.append("repair_process = ?")
+        update_values.append(request.repair_process)
     if request.repair_result is not None:
         update_fields.append("solution = ?")
         update_values.append(request.repair_result)
+    if request.lessons_learned is not None:
+        update_fields.append("lessons_learned = ?")
+        update_values.append(request.lessons_learned)
+    if request.tags is not None:
+        update_fields.append("tags = ?")
+        update_values.append(json.dumps(request.tags, ensure_ascii=False))
 
     if not update_fields:
         raise HTTPException(status_code=400, detail="没有需要更新的字段")

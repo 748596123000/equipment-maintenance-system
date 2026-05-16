@@ -17,13 +17,10 @@ st.set_page_config(
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from ui.components.common import hide_login_nav
-hide_login_nav()
+from ui.components.common import hide_login_nav, get_api_base, get_user_headers, require_login, init_api_base, safe_error_msg
 
-# ========== 登录检查 ==========
-if "user_info" not in st.session_state:
-    st.switch_page("pages/00_登录.py")
-    st.stop()
+hide_login_nav()
+require_login()
 
 # ========== 动画CSS样式 ==========
 st.markdown("""
@@ -52,21 +49,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def get_api_base() -> str:
-    """获取API基础地址"""
-    return st.session_state.get("api_base_url", "http://localhost:8000/api/v1")
-
-
-def get_user_headers() -> dict:
-    """获取包含用户信息的请求头"""
-    user_info = st.session_state.get("user_info", {})
-    return {"Authorization": f"Bearer {user_info.get('token', '')}"}
-
-
+@st.cache_data(ttl=60)
 def fetch_system_stats() -> dict:
     """从API获取系统统计数据"""
     try:
-        resp = requests.get(f"{get_api_base()}/admin/stats", timeout=5)
+        resp = requests.get(f"{get_api_base()}/admin/stats", headers=get_user_headers(), timeout=5)
         if resp.status_code == 200:
             data = resp.json()
             return data.get("data", {})
@@ -75,6 +62,7 @@ def fetch_system_stats() -> dict:
     return {}
 
 
+@st.cache_data(ttl=30)
 def fetch_pending_count() -> int:
     """获取待审批文档数量"""
     try:
@@ -92,31 +80,17 @@ def fetch_pending_count() -> int:
     return 0
 
 
+@st.cache_data(ttl=60)
 def fetch_my_upload_count() -> dict:
     """获取当前用户的上传统计"""
     try:
         resp = requests.get(
-            f"{get_api_base()}/upload/my",
+            f"{get_api_base()}/upload/my/stats",
             headers=get_user_headers(),
-            params={"page": 1, "page_size": 100},
             timeout=5,
         )
         if resp.status_code == 200:
-            data = resp.json()
-            documents = data.get("data", {}).get("documents", [])
-            stats = {
-                "total": len(documents),
-                "pending": 0,
-                "approved": 0,
-                "rejected": 0,
-                "processing": 0,
-                "completed": 0,
-            }
-            for doc in documents:
-                status = doc.get("status", "")
-                if status in stats:
-                    stats[status] += 1
-            return stats
+            return resp.json().get("data", {})
     except Exception:
         pass
     return {"total": 0, "pending": 0, "approved": 0, "rejected": 0, "processing": 0, "completed": 0}
@@ -239,7 +213,7 @@ def render_user_home():
         st.markdown("<br>", unsafe_allow_html=True)
         ask_clicked = st.button("提问", type="primary", key="quick_ask", width="stretch")
 
-    if ask_clicked or (question and st.button("搜索", key="quick_ask_btn")):
+    if ask_clicked:
         if question:
             st.session_state["quick_question"] = question
             st.switch_page("pages/02_知识检索.py")
@@ -388,7 +362,7 @@ def render_admin_home():
         st.markdown("<br>", unsafe_allow_html=True)
         ask_clicked = st.button("提问", type="primary", key="quick_ask", width="stretch")
 
-    if ask_clicked or (question and st.button("搜索", key="quick_ask_btn")):
+    if ask_clicked:
         if question:
             st.session_state["quick_question"] = question
             st.switch_page("pages/02_知识检索.py")
@@ -425,10 +399,7 @@ def render_admin_home():
 
 
 def main():
-    """页面主函数"""
-    # 初始化API地址
-    if "api_base_url" not in st.session_state:
-        st.session_state.api_base_url = "http://localhost:8000/api/v1"
+    init_api_base()
 
     # 根据用户角色渲染不同首页
     user_info = st.session_state.get("user_info", {})

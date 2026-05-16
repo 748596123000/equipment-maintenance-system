@@ -15,34 +15,15 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from ui.components.common import hide_login_nav, get_api_base, get_user_headers, require_admin, init_api_base, safe_error_msg
 
 st.set_page_config(
     page_title="PDF数据库 - 设备检修知识系统",
     page_icon="📚",
 )
 
-from ui.components.common import hide_login_nav
 hide_login_nav()
-
-# ========== 权限检查 ==========
-if "user_info" not in st.session_state:
-    st.switch_page("pages/00_登录.py")
-    st.stop()
-
-if st.session_state["user_info"]["role"] != "admin":
-    st.error("无权限访问此页面，仅管理员可操作")
-    st.stop()
-
-
-def get_api_base() -> str:
-    """获取API基础地址"""
-    return st.session_state.get("api_base_url", "http://localhost:8000/api/v1")
-
-
-def get_user_headers() -> dict:
-    """获取包含用户信息的请求头"""
-    user_info = st.session_state.get("user_info", {})
-    return {"Authorization": f"Bearer {user_info.get('token', '')}"}
+require_admin()
 
 
 def render_kb_stats():
@@ -50,7 +31,7 @@ def render_kb_stats():
     st.markdown("### 📊 知识库统计")
 
     try:
-        resp = requests.get(f"{get_api_base()}/admin/stats", timeout=5)
+        resp = requests.get(f"{get_api_base()}/admin/stats", headers=get_user_headers(), timeout=5)
         if resp.status_code == 200:
             stats = resp.json().get("data", {})
 
@@ -67,7 +48,7 @@ def render_kb_stats():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取统计信息出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def render_document_list():
@@ -91,6 +72,7 @@ def render_document_list():
     try:
         resp = requests.get(
             f"{get_api_base()}/upload/list",
+            headers=get_user_headers(),
             params={"page": 1, "page_size": 100},
             timeout=30,
         )
@@ -121,20 +103,10 @@ def render_document_list():
             # 显示文档表格
             doc_table = []
             for doc in completed_docs:
-                # 获取上传者用户名
-                uploader_name = ""
-                uploader_id = doc.get("uploader_id", "")
-                if uploader_id:
-                    try:
-                        user_resp = requests.get(
-                            f"{get_api_base()}/auth/me",
-                            headers=get_user_headers(),
-                            timeout=5,
-                        )
-                        if user_resp.status_code == 200:
-                            uploader_name = user_resp.json().get("data", {}).get("username", uploader_id[:8])
-                    except Exception:
-                        uploader_name = uploader_id[:8]
+                uploader_name = doc.get("uploader_name", "")
+                if not uploader_name:
+                    uploader_id = doc.get("uploader_id", "")
+                    uploader_name = uploader_id[:8] if uploader_id else "未知"
 
                 doc_table.append({
                     "document_id": doc.get("document_id", ""),
@@ -169,7 +141,11 @@ def render_document_list():
 
                     with col_action:
                         if st.button("删除", type="secondary", key=f"del_pdf_{row['document_id']}", width="stretch"):
-                            _delete_document(row["document_id"], row["文件名"])
+                            confirm_delete = st.checkbox("确认删除", key=f"confirm_delete_pdf_{row['document_id']}")
+                            if confirm_delete:
+                                _delete_document(row["document_id"], row["文件名"])
+                            else:
+                                st.warning("请勾选确认删除")
 
                     if i < len(doc_table) - 1:
                         st.markdown("---")
@@ -180,7 +156,7 @@ def render_document_list():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取文档列表出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def _delete_document(document_id: str, filename: str):
@@ -205,13 +181,11 @@ def _delete_document(document_id: str, filename: str):
         except requests.exceptions.ConnectionError:
             st.error("无法连接到后端服务")
         except Exception as e:
-            st.error(f"删除出错: {str(e)}")
+            st.error("操作失败，请稍后重试")
 
 
 def main():
-    """页面主函数"""
-    if "api_base_url" not in st.session_state:
-        st.session_state.api_base_url = "http://localhost:8000/api/v1"
+    init_api_base()
 
     st.title("📚 PDF数据库")
 

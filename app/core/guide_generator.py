@@ -16,6 +16,7 @@ from typing import Generator, List, Optional
 from app.config import settings
 from app.services.llm_service import get_llm_service
 from app.core.retriever import get_retriever, KnowledgeRetriever
+from app.utils.helpers import extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -436,28 +437,9 @@ class GuideGenerator:
         Raises:
             ValueError: JSON解析失败时抛出
         """
-        # 提取JSON内容
-        json_str = response.strip()
-
-        # 尝试从markdown代码块中提取JSON
-        if "```json" in json_str:
-            start = json_str.index("```json") + 7
-            end = json_str.index("```", start)
-            json_str = json_str[start:end].strip()
-        elif "```" in json_str:
-            start = json_str.index("```") + 3
-            end = json_str.index("```", start)
-            json_str = json_str[start:end].strip()
-
-        # 尝试找到JSON对象的起始和结束位置
-        json_start = json_str.find("{")
-        json_end = json_str.rfind("}")
-        if json_start >= 0 and json_end > json_start:
-            json_str = json_str[json_start:json_end + 1]
-
         try:
-            data = json.loads(json_str)
-        except json.JSONDecodeError as e:
+            data = extract_json_from_text(response)
+        except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"JSON解析失败: {e}, 原始内容: {response[:500]}")
             raise ValueError(f"作业指引格式解析失败: {e}")
 

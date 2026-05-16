@@ -20,28 +20,10 @@ st.set_page_config(
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from ui.components.common import hide_login_nav
+from ui.components.common import hide_login_nav, get_api_base, get_user_headers, require_admin, init_api_base, safe_error_msg
+
 hide_login_nav()
-
-# ========== 权限检查 ==========
-if "user_info" not in st.session_state:
-    st.switch_page("pages/00_登录.py")
-    st.stop()
-
-if st.session_state["user_info"]["role"] != "admin":
-    st.error("无权限访问此页面，仅管理员可操作")
-    st.stop()
-
-
-def get_api_base() -> str:
-    """获取API基础地址"""
-    return st.session_state.get("api_base_url", "http://localhost:8000/api/v1")
-
-
-def get_user_headers() -> dict:
-    """获取包含用户信息的请求头"""
-    user_info = st.session_state.get("user_info", {})
-    return {"Authorization": f"Bearer {user_info.get('token', '')}"}
+require_admin()
 
 
 def render_stats_dashboard():
@@ -49,7 +31,7 @@ def render_stats_dashboard():
     st.markdown("### 📊 系统统计")
 
     try:
-        resp = requests.get(f"{get_api_base()}/admin/stats", timeout=5)
+        resp = requests.get(f"{get_api_base()}/admin/stats", headers=get_user_headers(), timeout=5)
         if resp.status_code == 200:
             stats = resp.json().get("data", {})
 
@@ -80,7 +62,7 @@ def render_stats_dashboard():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取统计信息出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def render_user_approval():
@@ -137,7 +119,7 @@ def render_user_approval():
                                                 error_data = approve_resp.json()
                                                 st.error(f"审批失败: {error_data.get('detail', '未知错误')}")
                                         except Exception as e:
-                                            st.error(f"审批出错: {str(e)}")
+                                            st.error("操作失败，请稍后重试")
 
                             with col_btn2:
                                 if st.button("拒绝", type="secondary", key=f"reject_{user_id}", width="stretch"):
@@ -155,7 +137,7 @@ def render_user_approval():
                                                 error_data = reject_resp.json()
                                                 st.error(f"拒绝失败: {error_data.get('detail', '未知错误')}")
                                         except Exception as e:
-                                            st.error(f"拒绝出错: {str(e)}")
+                                            st.error("操作失败，请稍后重试")
 
                         st.markdown("---")
         else:
@@ -164,7 +146,7 @@ def render_user_approval():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取待审批用户出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def render_user_management():
@@ -214,6 +196,7 @@ def render_user_management():
                             "role": role,
                             "department": department,
                         },
+                        headers=get_user_headers(),
                         timeout=30,
                     )
 
@@ -227,7 +210,7 @@ def render_user_management():
                 except requests.exceptions.ConnectionError:
                     st.error("无法连接到后端服务")
                 except Exception as e:
-                    st.error(f"创建出错: {str(e)}")
+                    st.error("操作失败，请稍后重试")
 
     st.markdown("---")
 
@@ -237,6 +220,7 @@ def render_user_management():
         resp = requests.get(
             f"{get_api_base()}/admin/users",
             params={"page": 1, "page_size": 50},
+            headers=get_user_headers(),
             timeout=30,
         )
 
@@ -281,22 +265,27 @@ def render_user_management():
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.button("🗑️ 删除用户", type="secondary", width="stretch", key="delete_user_btn"):
                             if del_user:
-                                with st.spinner("正在删除..."):
-                                    try:
-                                        resp = requests.delete(
-                                            f"{get_api_base()}/admin/users/{del_user['id']}",
-                                            timeout=30,
-                                        )
-                                        if resp.status_code == 200:
-                                            st.success(f"用户 '{del_user['username']}' 已删除")
-                                            st.rerun()
-                                        else:
-                                            error_data = resp.json()
-                                            st.error(f"删除失败: {error_data.get('detail', '未知错误')}")
-                                    except requests.exceptions.ConnectionError:
-                                        st.error("无法连接到后端服务")
-                                    except Exception as e:
-                                        st.error(f"删除出错: {str(e)}")
+                                confirm_delete = st.checkbox("确认删除", key="confirm_delete_user")
+                                if confirm_delete:
+                                    with st.spinner("正在删除..."):
+                                        try:
+                                            resp = requests.delete(
+                                                f"{get_api_base()}/admin/users/{del_user['id']}",
+                                                headers=get_user_headers(),
+                                                timeout=30,
+                                            )
+                                            if resp.status_code == 200:
+                                                st.success(f"用户 '{del_user['username']}' 已删除")
+                                                st.rerun()
+                                            else:
+                                                error_data = resp.json()
+                                                st.error(f"删除失败: {error_data.get('detail', '未知错误')}")
+                                        except requests.exceptions.ConnectionError:
+                                            st.error("无法连接到后端服务")
+                                        except Exception as e:
+                                            st.error("操作失败，请稍后重试")
+                                else:
+                                    st.warning("请勾选确认删除")
                 else:
                     st.info("没有可删除的用户（admin账户不可删除）")
             else:
@@ -305,7 +294,7 @@ def render_user_management():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取用户列表出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def render_operation_logs():
@@ -330,6 +319,7 @@ def render_operation_logs():
         resp = requests.get(
             f"{get_api_base()}/admin/logs",
             params=params,
+            headers=get_user_headers(),
             timeout=30,
         )
 
@@ -361,7 +351,7 @@ def render_operation_logs():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取日志出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def render_system_config():
@@ -370,7 +360,7 @@ def render_system_config():
 
     # 获取当前配置
     try:
-        resp = requests.get(f"{get_api_base()}/admin/config", timeout=5)
+        resp = requests.get(f"{get_api_base()}/admin/config", headers=get_user_headers(), timeout=5)
         if resp.status_code == 200:
             current_config = resp.json().get("data", {})
         else:
@@ -467,6 +457,7 @@ def render_system_config():
                         "top_k_results": top_k if top_k != int(current_config.get("top_k_results", 5)) else None,
                         "retriever_score_threshold": score_threshold if score_threshold != float(current_config.get("retriever_score_threshold", 0.3)) else None,
                     },
+                    headers=get_user_headers(),
                     timeout=30,
                 )
 
@@ -479,7 +470,7 @@ def render_system_config():
             except requests.exceptions.ConnectionError:
                 st.error("无法连接到后端服务")
             except Exception as e:
-                st.error(f"更新配置出错: {str(e)}")
+                st.error("操作失败，请稍后重试")
 
 
 def render_index_management():
@@ -489,7 +480,7 @@ def render_index_management():
     # 健康检查
     st.markdown("#### 系统健康状态")
     try:
-        resp = requests.get(f"{get_api_base()}/admin/health", timeout=5)
+        resp = requests.get(f"{get_api_base()}/admin/health", headers=get_user_headers(), timeout=5)
         if resp.status_code == 200:
             health = resp.json().get("data", {})
             components = health.get("components", {})
@@ -517,7 +508,7 @@ def render_index_management():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"健康检查出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
     st.markdown("---")
 
@@ -530,6 +521,7 @@ def render_index_management():
             try:
                 resp = requests.post(
                     f"{get_api_base()}/admin/reindex",
+                    headers=get_user_headers(),
                     timeout=300,
                 )
 
@@ -545,13 +537,11 @@ def render_index_management():
             except requests.exceptions.Timeout:
                 st.error("索引重建超时，请稍后在系统日志中查看进度")
             except Exception as e:
-                st.error(f"重建出错: {str(e)}")
+                st.error("操作失败，请稍后重试")
 
 
 def main():
-    """页面主函数"""
-    if "api_base_url" not in st.session_state:
-        st.session_state.api_base_url = "http://localhost:8000/api/v1"
+    init_api_base()
 
     st.title("⚙️ 系统管理")
 

@@ -17,6 +17,7 @@ import logging
 from typing import Any, Dict, Generator, List, Optional
 
 from app.config import settings
+from app.utils.helpers import extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -212,23 +213,10 @@ class LLMService:
 
         response_text = self.chat(messages, temperature=temperature)
 
-        # 解析JSON：支持 ```json``` 代码块和纯JSON
-        json_str = response_text.strip()
-
-        # 尝试提取 ```json``` 代码块
-        if "```json" in json_str:
-            start = json_str.index("```json") + 7
-            end = json_str.index("```", start)
-            json_str = json_str[start:end].strip()
-        elif "```" in json_str:
-            # 尝试提取普通代码块
-            start = json_str.index("```") + 3
-            end = json_str.index("```", start)
-            json_str = json_str[start:end].strip()
-
         try:
-            return json.loads(json_str)
-        except json.JSONDecodeError as e:
+            result = extract_json_from_text(response_text)
+            return result
+        except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"JSON解析失败: {e}, 原始内容: {response_text[:500]}")
             raise ValueError(f"模型返回的JSON格式无效: {e}")
 

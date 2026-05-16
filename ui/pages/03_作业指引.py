@@ -21,18 +21,10 @@ st.set_page_config(
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from ui.components.common import hide_login_nav
+from ui.components.common import hide_login_nav, get_api_base, get_user_headers, require_login, init_api_base, safe_error_msg
+
 hide_login_nav()
-
-# ========== 登录检查 ==========
-if "user_info" not in st.session_state:
-    st.switch_page("pages/00_登录.py")
-    st.stop()
-
-
-def get_api_base() -> str:
-    """获取API基础地址"""
-    return st.session_state.get("api_base_url", "http://localhost:8000/api/v1")
+require_login()
 
 
 def render_guide_form():
@@ -207,9 +199,7 @@ def render_guide_result(guide_data: dict):
 
 
 def main():
-    """页面主函数"""
-    if "api_base_url" not in st.session_state:
-        st.session_state.api_base_url = "http://localhost:8000/api/v1"
+    init_api_base()
 
     st.title("📋 作业指引生成")
 
@@ -237,6 +227,7 @@ def main():
                             "safety_level": safety_level,
                             "detail_level": detail_level,
                         },
+                        headers=get_user_headers(),
                         timeout=120,
                     )
 
@@ -257,6 +248,7 @@ def main():
                                     try:
                                         export_resp = requests.get(
                                             f"{get_api_base()}/guide/export/{guide_id}",
+                                            headers=get_user_headers(),
                                             timeout=30,
                                         )
                                         if export_resp.status_code == 200:
@@ -270,7 +262,7 @@ def main():
                                         else:
                                             st.error("导出失败")
                                     except Exception as e:
-                                        st.error(f"导出失败: {str(e)}")
+                                        st.error("导出失败，请稍后重试")
 
                             with col_export2:
                                 if st.button("📋 复制指引内容", key="copy_guide"):
@@ -290,7 +282,7 @@ def main():
                 except requests.exceptions.Timeout:
                     st.error("生成超时，请稍后重试")
                 except Exception as e:
-                    st.error(f"生成出错: {str(e)}")
+                    st.error("生成指引失败，请稍后重试")
 
         # 如果已有生成的指引，显示
         elif "current_guide" in st.session_state:
@@ -303,6 +295,7 @@ def main():
             resp = requests.get(
                 f"{get_api_base()}/guide/list",
                 params={"page": 1, "page_size": 20},
+                headers=get_user_headers(),
                 timeout=30,
             )
 
@@ -326,6 +319,7 @@ def main():
                                 try:
                                     detail_resp = requests.get(
                                         f"{get_api_base()}/guide/{guide['guide_id']}",
+                                        headers=get_user_headers(),
                                         timeout=30,
                                     )
                                     if detail_resp.status_code == 200:
@@ -334,7 +328,7 @@ def main():
                                         st.session_state["current_guide_id"] = guide["guide_id"]
                                         st.rerun()
                                 except Exception as e:
-                                    st.error(f"获取详情失败: {str(e)}")
+                                    st.error("获取详情失败，请稍后重试")
                         st.markdown("---")
                 else:
                     st.info("暂无历史指引记录")
@@ -344,7 +338,7 @@ def main():
         except requests.exceptions.ConnectionError:
             st.error("无法连接到后端服务")
         except Exception as e:
-            st.error(f"获取指引列表出错: {str(e)}")
+            st.error("获取指引列表失败，请稍后重试")
 
 
 if __name__ == "__main__":

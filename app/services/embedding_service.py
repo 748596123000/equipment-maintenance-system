@@ -49,7 +49,7 @@ class EmbeddingService:
         self.api_key = api_key or settings.DASHSCOPE_API_KEY
         self.model = model or settings.EMBEDDING_MODEL
         self.dimension = settings.EMBEDDING_DIMENSION
-        self._cache: dict = {}  # 内存缓存：MD5哈希 -> 向量
+        self._cache: LRUCache = LRUCache(maxsize=5000)
 
     def _get_cache_key(self, text: str) -> str:
         """

@@ -15,57 +15,57 @@
 # FROM loongarch64/python:3.10
 # 如果龙芯云平台提供适配的Python基础镜像，可取消注释使用
 
-FROM python:3.10-slim
+# ---- 阶段1: 构建依赖 ----
+FROM python:3.10-slim AS builder
 
-# 设置工作目录
-WORKDIR /app
+WORKDIR /build
 
-# 设置环境变量
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    # ChromaDB在LoongArch上需要使用纯Python的hnswlib替代方案
-    CHROMA_DB_IMPL=duckdb+parquet \
-    ANNOY_ENABLED=0
-
-# 安装系统依赖
-# 银河麒麟基于Debian，使用apt包管理器
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
-    # PDF解析所需的系统库
     libmupdf-dev \
-    mupdf-tools \
-    # 图片处理库
     libjpeg-dev \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件并安装Python依赖
 COPY requirements.txt .
-# LoongArch架构下部分包需要源码编译，增加编译超时时间
-RUN pip install --no-cache-dir -r requirements.txt \
-    || pip install --no-cache-dir -r requirements.txt --use-pep517
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt \
+    || pip install --no-cache-dir --prefix=/install -r requirements.txt --use-pep517
 
-# 复制项目代码
+# ---- 阶段2: 运行时 ----
+FROM python:3.10-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CHROMA_DB_IMPL=duckdb+parquet \
+    ANNOY_ENABLED=0
+
+# Docker基础镜像为Debian，使用apt包管理器
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libmupdf-dev \
+    mupdf-tools \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local
+
 COPY . .
 
-# 创建数据目录
 RUN mkdir -p /app/data/pdfs /app/data/images /app/data/chroma_db /app/data/logs
 
-# 创建非root用户
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-# 暴露端口
 EXPOSE 8501 8000
 
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/health && curl -f http://localhost:8501/_stcore/health || exit 1
 
-# 启动命令：使用shell脚本管理多进程
 COPY deploy/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 CMD ["/app/start.sh"]

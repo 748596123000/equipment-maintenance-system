@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/Streamlit-1.40.0-FF4B4B?style=flat-square&logo=streamlit" alt="Streamlit">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/ChromaDB-0.5.0-FF6B6B?style=flat-square" alt="ChromaDB">
-  <img src="https://img.shields.io/badge/Security-8.8%2F10-brightgreen?style=flat-square" alt="Security">
+  <img src="https://img.shields.io/badge/Security-Hardened-brightgreen?style=flat-square" alt="Security">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="License">
 </p>
 
@@ -27,14 +27,17 @@
 
 本项目是**第15届中国软件杯竞赛**参赛作品，旨在为工业设备检修领域提供一套完整的知识检索与智能作业解决方案。系统融合多模态大模型技术，支持文本、图片等多种形式的检修知识检索，提供AI智能问答、作业指引生成、案例管理等功能。
 
+系统内置**摩托车发动机维修手册**作为示例数据，首次启动自动导入知识库，开箱即用。
+
 ### 核心能力
 
-- 🔍 **多模态知识检索** — 支持文本语义检索、关键词检索、图片相似度检索
-- 🤖 **AI智能问答** — 基于大模型的检修知识问答，支持上下文记忆
-- 📋 **作业指引生成** — 自动生成标准化检修作业指导书
+- 🔍 **多模态知识检索** — 支持文本语义检索、关键词检索、混合检索
+- 🤖 **AI智能问答** — 基于大模型的检修知识问答，支持上下文记忆与图片输入
+- 📋 **作业指引生成** — 自动生成标准化检修作业指导书，支持导出
 - 📚 **案例管理** — 检修案例的创建、审核、检索与复用
-- 📄 **文档管理** — PDF文档上传、解析、向量化存储
+- 📄 **文档管理** — PDF文档上传、解析、向量化存储与在线预览
 - 👥 **用户权限管理** — 管理员审批制用户注册，细粒度权限控制
+- 🔒 **安全加固** — Bearer Token认证、bcrypt密码哈希、速率限制、XSS/SQL注入/路径遍历防护
 
 ---
 
@@ -46,7 +49,7 @@
 |------|------|
 | 语义检索 | 基于向量相似度的语义理解检索 |
 | 关键词检索 | 传统TF-IDF关键词匹配 |
-| 混合检索 | 语义+关键词融合排序 |
+| 混合检索 | 语义+关键词融合排序，效果最佳 |
 | 图片检索 | 以图搜图，查找相似故障图片 |
 
 ### 2. AI问答模块
@@ -65,17 +68,18 @@
 
 ### 4. 案例管理模块
 
-- 📝 检修案例创建与编辑
-- ✔️ 管理员审核流程
+- 📝 检修案例创建与编辑（含故障分析、维修过程、经验总结）
+- ✔️ 管理员审核流程（待审核/已通过/已拒绝）
 - 🔍 案例检索与推荐
 - 📊 案例统计分析
 
 ### 5. 文档管理模块
 
-- 📤 PDF批量上传
-- 🔍 PDF内容解析与向量化
+- 📤 PDF批量上传与自动解析
+- 🔍 PDF内容解析、分块与向量化存储
 - 👁️ PDF在线预览
-- ✅ 文档审批流程
+- ✅ 文档审批流程（待审批/已通过/已拒绝）
+- 🏷️ 文档分类与关键词搜索
 
 ---
 
@@ -89,8 +93,11 @@
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │ 登录页面  │ │ 知识检索  │ │ 作业指引  │ │ 案例管理  │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
+│  │ 知识管理  │ │ 系统管理  │ │ PDF数据库 │ │ 知识库    │       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 └────────────────────────┬────────────────────────────────────┘
-                         │ HTTPS/HTTP
+                         │ Bearer Token / HTTPS
 ┌────────────────────────▼────────────────────────────────────┐
 │                      API层 (FastAPI)                         │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
@@ -120,17 +127,18 @@
 
 ### 技术栈
 
-| 层级 | 技术 | 版本 |
-|------|------|------|
-| 前端 | Streamlit | 1.40.0 |
-| 后端 | FastAPI | 0.115.0 |
-| 服务器 | Uvicorn | 0.32.0 |
-| 数据库 | SQLite | - |
-| 向量库 | ChromaDB | 0.5.0 |
-| 大模型 | 通义千问 (DashScope) | qwen-max |
-| 向量化 | 通义千问 Embedding | text-embedding-v3 |
-| 密码哈希 | bcrypt (passlib) | 1.7.4 |
-| 容器化 | Docker + Docker Compose | - |
+| 层级 | 技术 | 版本 | 说明 |
+|------|------|------|------|
+| 前端 | Streamlit | 1.40.0 | 数据应用框架 |
+| 后端 | FastAPI | 0.115.0 | 高性能Web框架 |
+| 服务器 | Uvicorn | 0.32.0 | ASGI服务器 |
+| 数据库 | SQLite | - | 轻量级关系数据库 |
+| 向量库 | ChromaDB | 0.5.0 | 向量数据库(duckdb后端) |
+| 大模型 | 通义千问 | qwen-max | 大语言模型 |
+| 向量化 | 通义千问 Embedding | text-embedding-v3 | 文本向量化(1024维) |
+| 密码哈希 | bcrypt | 4.0.1 | 安全密码存储 |
+| 缓存 | cachetools | 5.3.3 | LRU/TTL缓存 |
+| 容器化 | Docker + Docker Compose | - | 多阶段构建+安全加固 |
 
 ---
 
@@ -165,6 +173,8 @@ source .venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
+# 如需开发/测试依赖
+pip install -r requirements-dev.txt
 ```
 
 4. **配置环境变量**
@@ -184,108 +194,186 @@ CORS_ORIGINS=["http://localhost:8501"]
 ALLOWED_HOSTS=["localhost", "127.0.0.1"]
 ```
 
-5. **启动后端服务**
+5. **启动服务**
+
+方式一：分别启动（开发推荐）
 
 ```bash
-python -m app.main
-# 或使用 uvicorn
+# 终端1：启动后端
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
 
-6. **启动前端界面**
-
-```bash
+# 终端2：启动前端
 streamlit run ui/app.py
 ```
 
-7. **访问系统**
+方式二：一键启动
+
+```bash
+bash deploy/start.sh
+```
+
+6. **访问系统**
 
 - 前端界面：http://localhost:8501
 - API文档：http://localhost:8000/docs (DEBUG=True时)
+- 健康检查：http://localhost:8000/health
+
+7. **默认账号**
+
+系统首次启动自动创建管理员账号，密码保存在 `data/.initial_passwords` 文件中。
+
+> 💡 **示例数据**：系统首次启动时会自动扫描 `samples/` 目录，将摩托车发动机维修手册导入知识库，无需手动上传。
 
 ---
 
 ## 安全特性
 
-本项目经过全面安全审计，修复了41个安全问题，安全评分达到 **8.8/10**。
+本项目经过全面安全审计与加固，实现了多层安全防护。
 
 ### 认证与授权
 
-- ✅ **Bearer Token 认证** — HTTPBearer + 24小时过期
-- ✅ **bcrypt 密码哈希** — 自动升级旧版SHA256哈希
+- ✅ **Bearer Token 认证** — HTTPBearer + 24小时过期 + 服务端Token存储
+- ✅ **bcrypt 密码哈希** — 自动升级旧版SHA256哈希，登录时无缝迁移
 - ✅ **路由级认证依赖** — 所有API端点默认需要认证
-- ✅ **对象级授权** — 资源所有权校验，防止越权访问
+- ✅ **对象级授权** — 资源所有权校验（案例/指引/会话/文档），防止越权访问
 - ✅ **管理员审批制** — 用户注册需管理员审批
+- ✅ **SSE流认证** — GET端点通过Token查询参数验证身份
+- ✅ **登录枚举防护** — 统一错误消息，防止账户枚举攻击
 
 ### 防护机制
 
 - ✅ **速率限制** — 登录5次/5分钟，API 60次/分钟
 - ✅ **XSS防护** — html.escape() 转义所有动态内容
-- ✅ **SQL注入防护** — 参数化查询 + 列名白名单
+- ✅ **SQL注入防护** — 参数化查询 + 列名白名单 + LIKE转义
 - ✅ **路径遍历防护** — basename + realpath 校验
-- ✅ **文件上传安全** — 类型/大小/魔数三重校验
+- ✅ **文件上传安全** — 类型/大小/PDF魔数三重校验
+- ✅ **错误信息脱敏** — 前后端统一友好错误提示，不暴露内部实现
+- ✅ **Token自动清理** — 后台异步任务每小时清理过期Token
 
 ### 安全响应头
 
-- X-Content-Type-Options: nosniff
-- X-Frame-Options: DENY
-- Content-Security-Policy
-- Strict-Transport-Security
-- Permissions-Policy
+| 响应头 | 值 | 说明 |
+|--------|-----|------|
+| X-Content-Type-Options | nosniff | 防止MIME嗅探 |
+| X-Frame-Options | DENY | 防止点击劫持 |
+| Content-Security-Policy | default-src 'self'; ... | 防止XSS注入 |
+| Strict-Transport-Security | max-age=31536000 | 强制HTTPS |
+| Permissions-Policy | camera=(), microphone=() | 限制浏览器API |
+
+### Docker安全
+
+- ✅ 多阶段构建，运行时无编译工具
+- ✅ 非root用户运行 (appuser)
+- ✅ `no-new-privileges:true` 防止提权
+- ✅ `cap_drop: ALL` 最小权限
+- ✅ 日志大小限制
+- ✅ 双服务健康检查
 
 ### 配置安全
 
 - 生产环境强制 DEBUG=False
-- 依赖版本精确锁定
-- 敏感文件排除在版本控制外
-- Docker非root用户运行
-
-详细安全报告：[security_best_practices_report.md](./security_best_practices_report.md)
+- 依赖版本精确锁定（含bcrypt兼容版本）
+- 敏感文件排除在版本控制外（.env, .initial_passwords, *.db, data/）
+- 开发依赖独立管理（requirements-dev.txt）
+- CI集成安全扫描（bandit）
 
 ---
 
 ## 部署指南
 
-### Docker 部署
-
-1. **构建镜像**
-
-```bash
-docker-compose build
-```
-
-2. **启动服务**
-
-```bash
-docker-compose up -d
-```
-
-3. **查看日志**
-
-```bash
-docker-compose logs -f
-```
-
-### 生产环境部署
+### 方式一：Docker部署（推荐生产环境）
 
 1. **配置环境变量**
 
-```env
-ENVIRONMENT=production
-DEBUG=False
-ALLOWED_HOSTS=["your-domain.com"]
-CORS_ORIGINS=["https://your-frontend.com"]
+```bash
+cp .env.example .env
+# 编辑 .env，填入API Key和生产环境配置
 ```
 
-2. **配置 Nginx 反向代理**
+2. **构建并启动**
+
+```bash
+docker-compose up -d --build
+```
+
+3. **查看状态**
+
+```bash
+docker-compose ps
+docker-compose logs -f
+```
+
+4. **停止服务**
+
+```bash
+docker-compose down
+```
+
+### 方式二：银河麒麟/龙芯架构部署
+
+项目提供完整的麒麟Linux部署脚本，支持LoongArch架构：
+
+```bash
+# 1. 上传项目到服务器
+scp -r equipment-maintenance-system/ user@kylin-server:/opt/
+
+# 2. 执行部署脚本
+cd /opt/equipment-maintenance-system
+bash deploy/kylin_setup.sh
+```
+
+部署脚本会自动：
+- 检测系统架构和包管理器
+- 安装Python 3.10+和系统依赖
+- 创建虚拟环境并安装Python依赖
+- 配置数据目录和权限
+- 生成初始管理员密码
+
+### 方式三：手动部署
+
+1. **安装依赖**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. **配置环境**
+
+```bash
+cp .env.example .env
+# 编辑 .env
+```
+
+3. **启动服务**
+
+```bash
+# 使用启动脚本（含健康检查和PID管理）
+bash deploy/start.sh
+
+# 或手动启动
+uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+streamlit run ui/app.py --server.port 8501 &
+```
+
+4. **停止服务**
+
+```bash
+bash deploy/stop.sh
+```
+
+### 生产环境Nginx配置
 
 ```nginx
+# HTTP重定向到HTTPS
 server {
     listen 80;
     server_name your-domain.com;
     return 301 https://$server_name$request_uri;
 }
 
+# HTTPS主配置
 server {
     listen 443 ssl;
     server_name your-domain.com;
@@ -293,8 +381,26 @@ server {
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
 
-    location / {
+    # API后端
+    location /api/ {
         proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 健康检查
+    location /health {
+        proxy_pass http://localhost:8000;
+    }
+
+    # Streamlit前端（含WebSocket支持）
+    location / {
+        proxy_pass http://localhost:8501;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -303,11 +409,14 @@ server {
 }
 ```
 
-3. **麒麟/龙芯架构部署**
+### 数据备份
 
 ```bash
-# 使用提供的部署脚本
-bash deploy/kylin_setup.sh
+# 执行备份脚本（SQLite + ChromaDB + 上传文件）
+bash deploy/backup.sh
+
+# 备份文件保存在 ./backups/ 目录
+# 默认保留最近7个备份
 ```
 
 ---
@@ -318,40 +427,60 @@ bash deploy/kylin_setup.sh
 equipment-maintenance-system/
 ├── app/                          # 后端API
 │   ├── api/                      # API路由
-│   │   ├── auth.py              # 用户认证
-│   │   ├── chat.py              # AI问答
-│   │   ├── search.py            # 知识检索
-│   │   ├── upload.py            # 文件上传
-│   │   ├── guide.py             # 作业指引
-│   │   ├── case.py              # 案例管理
-│   │   └── admin.py             # 系统管理
+│   │   ├── auth.py              # 用户认证（Bearer Token + bcrypt）
+│   │   ├── chat.py              # AI问答（SSE流式 + 会话管理）
+│   │   ├── search.py            # 知识检索（语义/关键词/混合）
+│   │   ├── upload.py            # 文件上传（PDF解析 + 向量化）
+│   │   ├── guide.py             # 作业指引（SSE流式生成）
+│   │   ├── case.py              # 案例管理（审核流程）
+│   │   └── admin.py             # 系统管理（配置持久化）
 │   ├── core/                     # 核心逻辑
-│   │   ├── retriever.py         # 检索引擎
-│   │   ├── rag_engine.py        # RAG引擎
+│   │   ├── retriever.py         # 检索引擎（LRUCache）
+│   │   ├── rag_engine.py        # RAG引擎（LRUCache）
 │   │   ├── guide_generator.py   # 指引生成
-│   │   └── pdf_parser.py        # PDF解析
+│   │   ├── chunker.py           # 文本分块
+│   │   └── pdf_parser.py        # PDF解析（并发图片处理）
 │   ├── models/                   # 数据模型
 │   │   └── database.py          # 数据库操作
 │   ├── services/                 # 外部服务
 │   │   ├── llm_service.py       # 大模型服务
-│   │   └── embedding_service.py # 向量化服务
+│   │   └── embedding_service.py # 向量化服务（LRUCache）
 │   ├── utils/                    # 工具函数
-│   ├── config.py                # 配置管理
-│   └── main.py                  # FastAPI入口
+│   │   ├── helpers.py           # 公共工具（JSON提取等）
+│   │   └── init_data.py         # 示例数据自动导入
+│   ├── config.py                # 配置管理（环境变量+数据库持久化）
+│   └── main.py                  # FastAPI入口（安全中间件）
 ├── ui/                           # 前端界面
 │   ├── app.py                   # Streamlit主应用
 │   ├── pages/                   # 页面组件
+│   │   ├── 00_登录.py           # 登录注册
+│   │   ├── 01_首页.py           # 首页仪表盘
+│   │   ├── 02_知识检索.py       # 智能问答
+│   │   ├── 03_作业指引.py       # 指引生成
+│   │   ├── 04_知识管理.py       # 文档审批
+│   │   ├── 05_系统管理.py       # 系统配置
+│   │   ├── 06_PDF数据库.py      # PDF管理
+│   │   └── 07_知识库.py         # 知识库浏览
 │   └── components/              # UI组件
+│       ├── common.py            # 公共工具（认证/错误处理）
+│       ├── preview.py           # PDF预览
+│       └── chat_component.py    # 聊天组件
+├── samples/                      # 示例数据
+│   └── 摩托车发动机维修手册.pdf  # 内置维修手册
 ├── deploy/                       # 部署脚本
-├── data/                         # 数据目录
-├── docs/                         # 文档
+│   ├── start.sh                 # 启动脚本（健康检查+PID管理）
+│   ├── stop.sh                  # 停止脚本（优雅停机）
+│   ├── backup.sh                # 备份脚本（验证+保留策略）
+│   └── kylin_setup.sh           # 银河麒麟部署
 ├── tests/                        # 测试
+├── .github/workflows/ci.yml     # CI（测试+安全扫描+Docker构建）
 ├── .env.example                  # 环境变量示例
 ├── .gitignore                    # Git忽略文件
-├── Dockerfile                    # Docker镜像
-├── docker-compose.yml            # Docker编排
+├── .dockerignore                 # Docker忽略文件
+├── Dockerfile                    # Docker镜像（多阶段构建）
+├── docker-compose.yml            # Docker编排（安全加固）
 ├── requirements.txt              # Python依赖
-├── security_best_practices_report.md  # 安全报告
+├── requirements-dev.txt          # 开发/测试依赖
 └── README.md                     # 项目介绍
 ```
 
@@ -360,8 +489,8 @@ equipment-maintenance-system/
 ## 开发团队
 
 - **项目**: 第15届中国软件杯竞赛作品
-- **技术栈**: FastAPI + Streamlit + 通义千问
-- **安全评分**: 8.8/10
+- **技术栈**: FastAPI + Streamlit + 通义千问 + ChromaDB
+- **安全**: 全面安全审计与加固
 
 ---
 

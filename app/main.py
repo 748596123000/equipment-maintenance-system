@@ -96,6 +96,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning(f"LLM服务检查失败: {e}")
 
+    # 初始化示例数据
+    try:
+        from app.utils.init_data import init_sample_data
+        init_sample_data()
+    except Exception as e:
+        logger.warning(f"示例数据初始化失败: {e}")
+
     logger.info("系统启动完成，开始接收请求")
 
     yield
@@ -225,6 +232,28 @@ def create_app() -> FastAPI:
     async def health_check():
         """健康检查接口，用于监控服务状态"""
         return {"status": "ok"}
+
+    @app.get("/health/ready", summary="就绪检查")
+    async def readiness_check():
+        checks = {"api": True, "database": False, "llm": False}
+        try:
+            from app.models.database import get_database
+            db = get_database()
+            db.get_stats()
+            checks["database"] = True
+        except Exception:
+            pass
+        try:
+            from app.services.llm_service import get_llm_service
+            llm = get_llm_service()
+            checks["llm"] = llm is not None
+        except Exception:
+            pass
+        all_ready = all(checks.values())
+        return {
+            "status": "ready" if all_ready else "not_ready",
+            "checks": checks
+        }
 
     return app
 

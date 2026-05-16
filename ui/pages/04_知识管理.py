@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from ui.components.preview import render_pdf_preview
-from ui.components.common import hide_login_nav
+from ui.components.common import hide_login_nav, get_api_base, get_user_headers, require_login, init_api_base, safe_error_msg
 
 st.set_page_config(
     page_title="知识管理 - 设备检修知识系统",
@@ -21,25 +21,9 @@ st.set_page_config(
 )
 
 hide_login_nav()
-
-# ========== 登录检查 ==========
-if "user_info" not in st.session_state:
-    st.switch_page("pages/00_登录.py")
-    st.stop()
+require_login()
 
 
-def get_api_base() -> str:
-    """获取API基础地址"""
-    return st.session_state.get("api_base_url", "http://localhost:8000/api/v1")
-
-
-def get_user_headers() -> dict:
-    """获取包含用户信息的请求头"""
-    user_info = st.session_state.get("user_info", {})
-    return {"Authorization": f"Bearer {user_info.get('token', '')}"}
-
-
-# ========== 状态映射 ==========
 STATUS_MAP = {
     "pending": "待审核",
     "approved": "已通过",
@@ -104,7 +88,7 @@ def render_my_uploads():
                 except requests.exceptions.ConnectionError:
                     st.error("无法连接到后端服务")
                 except Exception as e:
-                    st.error(f"上传出错: {str(e)}")
+                    st.error("操作失败，请稍后重试")
 
     elif upload_clicked and not uploaded_files:
         st.warning("请先选择要上传的文件")
@@ -151,7 +135,7 @@ def render_my_uploads():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取文档列表出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 # ========== 管理员：文档审批 ==========
@@ -242,7 +226,7 @@ def render_pending_documents():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取待审批文档出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def render_approved_documents():
@@ -252,6 +236,7 @@ def render_approved_documents():
     try:
         resp = requests.get(
             f"{get_api_base()}/upload/list",
+            headers=get_user_headers(),
             params={"page": 1, "page_size": 50},
             timeout=30,
         )
@@ -285,7 +270,7 @@ def render_approved_documents():
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取已审批文档出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def render_all_documents():
@@ -295,6 +280,7 @@ def render_all_documents():
     try:
         resp = requests.get(
             f"{get_api_base()}/upload/list",
+            headers=get_user_headers(),
             params={"page": 1, "page_size": 50},
             timeout=30,
         )
@@ -354,28 +340,32 @@ def render_all_documents():
 
                 if st.button("删除文档", type="secondary", key="admin_delete_doc_btn"):
                     if delete_doc_id:
-                        with st.spinner("正在删除..."):
-                            try:
-                                del_resp = requests.delete(
-                                    f"{get_api_base()}/upload/{delete_doc_id[0]}",
-                                    headers=get_user_headers(),
-                                    timeout=30,
-                                )
-                                if del_resp.status_code == 200:
-                                    st.success("文档删除成功")
-                                    st.rerun()
-                                else:
-                                    error_data = del_resp.json()
-                                    st.error(f"删除失败: {error_data.get('detail', '未知错误')}")
-                            except Exception as e:
-                                st.error(f"删除出错: {str(e)}")
+                        confirm_delete = st.checkbox("确认删除", key="confirm_delete_doc")
+                        if confirm_delete:
+                            with st.spinner("正在删除..."):
+                                try:
+                                    del_resp = requests.delete(
+                                        f"{get_api_base()}/upload/{delete_doc_id[0]}",
+                                        headers=get_user_headers(),
+                                        timeout=30,
+                                    )
+                                    if del_resp.status_code == 200:
+                                        st.success("文档删除成功")
+                                        st.rerun()
+                                    else:
+                                        error_data = del_resp.json()
+                                        st.error(f"删除失败: {error_data.get('detail', '未知错误')}")
+                                except Exception as e:
+                                    st.error("操作失败，请稍后重试")
+                        else:
+                            st.warning("请勾选确认删除")
             else:
                 st.info("暂无文档记录")
 
     except requests.exceptions.ConnectionError:
         st.error("无法连接到后端服务")
     except Exception as e:
-        st.error(f"获取文档列表出错: {str(e)}")
+        st.error("操作失败，请稍后重试")
 
 
 def _do_approve(document_id: str, comment: str):
@@ -397,7 +387,7 @@ def _do_approve(document_id: str, comment: str):
                 st.error(f"审批失败: {error_data.get('detail', '未知错误')}")
 
         except Exception as e:
-            st.error(f"审批出错: {str(e)}")
+            st.error("操作失败，请稍后重试")
 
 
 def _do_reject(document_id: str, comment: str):
@@ -419,15 +409,13 @@ def _do_reject(document_id: str, comment: str):
                 st.error(f"审批失败: {error_data.get('detail', '未知错误')}")
 
         except Exception as e:
-            st.error(f"审批出错: {str(e)}")
+            st.error("操作失败，请稍后重试")
 
 
 # ========== 页面主函数 ==========
 
 def main():
-    """页面主函数"""
-    if "api_base_url" not in st.session_state:
-        st.session_state.api_base_url = "http://localhost:8000/api/v1"
+    init_api_base()
 
     user_info = st.session_state.get("user_info", {})
     user_role = user_info.get("role", "")

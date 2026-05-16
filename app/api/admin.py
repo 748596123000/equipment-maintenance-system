@@ -42,6 +42,8 @@ class ConfigUpdateRequest(BaseModel):
     """配置更新请求"""
     llm_model: Optional[str] = Field(default=None, description="大模型名称")
     llm_temperature: Optional[float] = Field(default=None, description="生成温度")
+    llm_max_tokens: Optional[int] = Field(default=None, description="最大输出token数")
+    embedding_model: Optional[str] = Field(default=None, description="Embedding模型名称")
     chunk_size: Optional[int] = Field(default=None, description="分块大小")
     chunk_overlap: Optional[int] = Field(default=None, description="分块重叠大小")
     top_k_results: Optional[int] = Field(default=None, description="检索结果数")
@@ -323,6 +325,14 @@ async def update_system_config(request: ConfigUpdateRequest):
         settings.LLM_TEMPERATURE = request.llm_temperature
         updated_fields["llm_temperature"] = request.llm_temperature
 
+    if request.llm_max_tokens is not None:
+        settings.LLM_MAX_TOKENS = request.llm_max_tokens
+        updated_fields["llm_max_tokens"] = request.llm_max_tokens
+
+    if request.embedding_model is not None:
+        settings.EMBEDDING_MODEL = request.embedding_model
+        updated_fields["embedding_model"] = request.embedding_model
+
     if request.chunk_size is not None:
         settings.CHUNK_SIZE = request.chunk_size
         updated_fields["chunk_size"] = request.chunk_size
@@ -342,8 +352,21 @@ async def update_system_config(request: ConfigUpdateRequest):
     if not updated_fields:
         raise HTTPException(status_code=400, detail="没有需要更新的配置项")
 
-    # 记录日志
     db = get_database()
+    for field, value in [
+        ("llm_model", request.llm_model),
+        ("llm_temperature", str(request.llm_temperature) if request.llm_temperature is not None else None),
+        ("llm_max_tokens", str(request.llm_max_tokens) if request.llm_max_tokens is not None else None),
+        ("embedding_model", request.embedding_model),
+        ("chunk_size", str(request.chunk_size) if request.chunk_size is not None else None),
+        ("chunk_overlap", str(request.chunk_overlap) if request.chunk_overlap is not None else None),
+        ("top_k_results", str(request.top_k_results) if request.top_k_results is not None else None),
+        ("retriever_score_threshold", str(request.retriever_score_threshold) if request.retriever_score_threshold is not None else None),
+    ]:
+        if value is not None:
+            db.set_config(field, str(value))
+
+    # 记录日志
     db.save_log(
         user_id=None,
         action="更新系统配置",

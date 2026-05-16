@@ -10,6 +10,7 @@ Streamlit前端主入口
 - 登录状态检查
 """
 
+import os
 import streamlit as st
 
 # ========== 页面基础配置 ==========
@@ -28,34 +29,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-
-# ========== 登录检查函数 ==========
-
-def check_login():
-    if "user_info" not in st.session_state:
-        st.switch_page("pages/00_登录.py")
-        st.stop()
-
-
-def check_admin():
-    """
-    检查用户是否为管理员
-
-    如果不是管理员，显示无权限提示。
-    """
-    check_login()
-    if st.session_state["user_info"]["role"] != "admin":
-        st.error("无权限访问此页面，仅管理员可操作")
-        st.stop()
-
-
-def get_user_headers() -> dict:
-    user_info = st.session_state.get("user_info", {})
-    token = user_info.get("token", "")
-    return {
-        "Authorization": f"Bearer {token}",
-    }
 
 
 # ========== 自定义CSS样式 ==========
@@ -277,7 +250,7 @@ def init_session_state():
     """
     # API配置
     if "api_base_url" not in st.session_state:
-        st.session_state.api_base_url = "http://localhost:8000/api/v1"
+        st.session_state.api_base_url = os.environ.get("API_BASE_URL", "http://localhost:8000/api/v1")
 
     # 用户状态
     if "user_logged_in" not in st.session_state:
@@ -296,6 +269,16 @@ def init_session_state():
         st.session_state.search_results = []
     if "last_query" not in st.session_state:
         st.session_state.last_query = ""
+
+
+@st.cache_data(ttl=30)
+def _check_backend_health(api_base: str) -> bool:
+    try:
+        import requests
+        resp = requests.get(f"{api_base.replace('/api/v1', '')}/health", timeout=3)
+        return resp.status_code == 200
+    except Exception:
+        return False
 
 
 def render_sidebar():
@@ -320,61 +303,40 @@ def render_sidebar():
         if user_role == "admin":
             st.markdown("#### 📋 导航菜单")
 
-            menu_options = {
-                "首页": "pages/01_首页.py",
-                "知识检索": "pages/02_知识检索.py",
-                "作业指引": "pages/03_作业指引.py",
-                "文档审批": "pages/04_知识管理.py",
-                "知识管理": "pages/04_知识管理.py",
-                "PDF数据库": "pages/06_PDF数据库.py",
-                "系统管理": "pages/05_系统管理.py",
+            pages = {
+                "🏠 首页": "pages/01_首页.py",
+                "🔍 知识检索": "pages/02_知识检索.py",
+                "📋 作业指引": "pages/03_作业指引.py",
+                "📝 文档审批": "pages/04_知识管理.py",
+                "📚 PDF数据库": "pages/06_PDF数据库.py",
+                "⚙️ 系统管理": "pages/05_系统管理.py",
             }
 
-            selected = st.radio(
-                "功能导航",
-                options=list(menu_options.keys()),
-                label_visibility="collapsed",
-                key="nav_radio",
-            )
-
-            if selected and st.button(f"前往 {selected}", width="stretch", key=f"nav_{selected}"):
-                st.switch_page(menu_options[selected])
+            for label, page in pages.items():
+                if st.button(label, key=f"nav_{label}", use_container_width=True):
+                    st.switch_page(page)
         else:
             st.markdown("#### 📋 导航菜单")
 
-            menu_options = {
-                "首页": "pages/01_首页.py",
-                "知识检索": "pages/02_知识检索.py",
-                "作业指引": "pages/03_作业指引.py",
-                "我的上传": "pages/04_知识管理.py",
-                "知识库": "pages/07_知识库.py",
+            pages = {
+                "🏠 首页": "pages/01_首页.py",
+                "🔍 知识检索": "pages/02_知识检索.py",
+                "📋 作业指引": "pages/03_作业指引.py",
+                "📤 我的上传": "pages/04_知识管理.py",
+                "📚 知识库": "pages/07_知识库.py",
             }
 
-            selected = st.radio(
-                "功能导航",
-                options=list(menu_options.keys()),
-                label_visibility="collapsed",
-                key="nav_radio",
-            )
-
-            if selected and st.button(f"前往 {selected}", width="stretch", key=f"nav_{selected}"):
-                st.switch_page(menu_options[selected])
+            for label, page in pages.items():
+                if st.button(label, key=f"nav_{label}", use_container_width=True):
+                    st.switch_page(page)
 
         st.markdown("---")
 
         # 系统状态
         st.markdown("#### 📊 系统状态")
-        try:
-            import requests
-            resp = requests.get(
-                f"{st.session_state.api_base_url.replace('/api/v1', '')}/health",
-                timeout=3,
-            )
-            if resp.status_code == 200:
-                st.success("✅ 后端服务运行正常")
-            else:
-                st.warning("⚠️ 后端服务异常")
-        except Exception:
+        if _check_backend_health(st.session_state.api_base_url):
+            st.success("✅ 后端服务运行正常")
+        else:
             st.warning("⚠️ 后端服务未连接")
 
         # API配置（地址仅从环境变量/配置读取，不允许用户修改）

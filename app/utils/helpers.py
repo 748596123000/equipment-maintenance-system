@@ -12,6 +12,7 @@
 - 响应格式化
 """
 
+import json
 import os
 import re
 import time
@@ -381,6 +382,19 @@ def safe_json_serialize(obj: Any) -> Any:
     elif hasattr(obj, "__dict__"):
         return str(obj)
     return obj
+
+
+def extract_json_from_text(text: str) -> dict:
+    if "```json" in text:
+        match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if match:
+            text = match.group(1)
+    elif "```" in text:
+        match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
+        if match:
+            text = match.group(1)
+    text = text.strip()
+    return json.loads(text)
 
 
 def calculate_pagination(page: int, page_size: int, total: int) -> Dict[str, Any]:

@@ -18,6 +18,7 @@ import time
 from typing import List, Optional
 
 import chromadb
+from cachetools import LRUCache
 from chromadb.config import Settings as ChromaSettings
 
 from app.config import settings
@@ -25,9 +26,8 @@ from app.services.embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
-# 查询结果缓存（内存缓存，避免重复查询）
-_query_cache = {}  # {query_hash: (results, timestamp)}
-CACHE_TTL = 300  # 缓存有效期5分钟
+_query_cache: LRUCache = LRUCache(maxsize=1000)
+CACHE_TTL = 300
 
 
 class SearchResult:
@@ -567,7 +567,7 @@ class KnowledgeRetriever:
 
         # 简单分词：按空格和标点分割，过滤停用词和短词
         import re
-        words = re.split(r'[\s,，。！？、；：""''（）\[\]{}]+', text)
+        words = re.split(r'[\s,，。！？、；：“”‘’（）\[\]{}]+', text)
         keywords = []
 
         for word in words:

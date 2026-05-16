@@ -27,6 +27,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+async def _verify_stream_token(token: Optional[str]) -> dict:
+    from app.api.auth import _token_store
+    from datetime import datetime, timezone
+    if not token:
+        raise HTTPException(status_code=401, detail="未提供认证凭据")
+    token_data = _token_store.get(token)
+    if not token_data or datetime.now(timezone.utc) > token_data.get("expires_at", datetime.min.replace(tzinfo=timezone.utc)):
+        raise HTTPException(status_code=401, detail="无效或已过期的Token")
+    db = get_database()
+    user = db.get_user_by_id(token_data["user_id"])
+    if not user or not user.get("is_active"):
+        raise HTTPException(status_code=401, detail="用户不存在或已禁用")
+    return user
+
+
 class GuideGenerateRequest(BaseModel):
     """作业指引生成请求"""
     task_description: str = Field(..., min_length=1, max_length=5000, description="作业任务描述")
@@ -128,7 +143,7 @@ async def generate_guide(request: GuideGenerateRequest, current_user: dict = Dep
 
     except Exception as e:
         logger.error(f"作业指引生成失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
 @router.get("/stream", summary="SSE流式生成作业指引")
@@ -138,7 +153,11 @@ async def stream_guide(
     equipment_type: Optional[str] = Query(default=None, description="设备类型"),
     safety_level: str = Query(default="standard", description="安全等级"),
     detail_level: str = Query(default="medium", description="详细程度"),
+    token: Optional[str] = Query(default=None, description="认证Token"),
 ):
+    current_user = None
+    if token:
+        current_user = await _verify_stream_token(token)
     """
     SSE流式生成作业指引，逐步返回每个步骤的内容
 
@@ -197,11 +216,11 @@ async def stream_guide(
             now = datetime.now().isoformat()
             conn.execute(
                 """INSERT INTO guides (id, title, task_description, equipment_type, equipment_model,
-                   safety_level, guide_content, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   safety_level, guide_content, created_by, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (guide_id, f"作业指引 - {task_description[:30]}", task_description,
                  equipment_type or "", equipment_model or "",
-                 safety_level, full_content, now, now),
+                 safety_level, full_content, current_user["id"] if current_user else None, now, now),
             )
             conn.commit()
 

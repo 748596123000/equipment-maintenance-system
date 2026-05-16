@@ -119,7 +119,8 @@ class Database:
                 uploader_id TEXT DEFAULT '',
                 reviewer_id TEXT DEFAULT '',
                 review_comment TEXT DEFAULT '',
-                reviewed_at TEXT DEFAULT ''
+                reviewed_at TEXT DEFAULT '',
+                category TEXT DEFAULT '通用'
             )
         """)
 
@@ -132,6 +133,10 @@ class Database:
                 device_model TEXT DEFAULT '',
                 fault_type TEXT DEFAULT '',
                 solution TEXT DEFAULT '',
+                fault_analysis TEXT,
+                repair_process TEXT,
+                lessons_learned TEXT,
+                tags TEXT,
                 author_id TEXT,
                 status TEXT DEFAULT 'pending',
                 created_at TEXT NOT NULL,
@@ -257,6 +262,7 @@ class Database:
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             ("admin_001", "admin", admin_password_hash, "admin", now, 1, "active")
         )
+        admin_inserted = cursor.rowcount > 0
 
         user_password = secrets.token_urlsafe(12)
         user_password_hash = _pwd_context.hash(user_password)
@@ -265,14 +271,16 @@ class Database:
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             ("user_001", "user", user_password_hash, "user", now, 1, "active")
         )
+        user_inserted = cursor.rowcount > 0
 
         conn.commit()
-        password_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".initial_passwords")
-        with open(password_file, "w", encoding="utf-8") as f:
-            f.write(f"admin / {admin_password}\n")
-            f.write(f"user / {user_password}\n")
-        os.chmod(password_file, 0o600)
-        logger.warning("初始密码已写入 .initial_passwords 文件，请立即修改密码！")
+        if admin_inserted or user_inserted:
+            password_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".initial_passwords")
+            with open(password_file, "w", encoding="utf-8") as f:
+                f.write(f"admin / {admin_password}\n")
+                f.write(f"user / {user_password}\n")
+            os.chmod(password_file, 0o600)
+            logger.warning("初始密码已写入 .initial_passwords 文件，请立即修改密码！")
 
     # ========== 用户操作 ==========
 
@@ -479,6 +487,7 @@ class Database:
         filepath: str,
         file_size: int = 0,
         uploader_id: str = "",
+        category: str = "通用",
     ) -> Dict[str, Any]:
         """
         保存文档记录
@@ -489,6 +498,7 @@ class Database:
             filepath: 文件路径
             file_size: 文件大小
             uploader_id: 上传者ID
+            category: 文档分类
 
         Returns:
             dict: 文档信息
@@ -496,9 +506,9 @@ class Database:
         conn = self.get_connection()
         now = datetime.now().isoformat()
         conn.execute(
-            """INSERT INTO documents (id, filename, filepath, file_size, upload_time, status, chunk_count, uploader_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (document_id, filename, filepath, file_size, now, "pending", 0, uploader_id)
+            """INSERT INTO documents (id, filename, filepath, file_size, upload_time, status, chunk_count, uploader_id, category)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (document_id, filename, filepath, file_size, now, "pending", 0, uploader_id, category)
         )
         conn.commit()
         return {"id": document_id, "filename": filename, "status": "pending"}
@@ -707,11 +717,11 @@ class Database:
         conn.execute(
             """INSERT INTO cases (id, title, description, device_model, fault_type, solution, author_id, status, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (case_id, title, description, device_model, fault_type, solution, author_id, "pending", now, now)
+            (case_id, title, description, device_model, fault_type, solution, author_id, "pending_review", now, now)
         )
         conn.commit()
         logger.info(f"案例创建成功: {title}")
-        return {"id": case_id, "title": title, "status": "pending"}
+        return {"id": case_id, "title": title, "status": "pending_review"}
 
     def get_case_by_id(self, case_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -1340,7 +1350,7 @@ class Database:
         feedback_count = conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
         # 审核待处理数
         pending_reviews = conn.execute(
-            "SELECT COUNT(*) FROM cases WHERE status = 'pending'"
+            "SELECT COUNT(*) FROM cases WHERE status = 'pending_review'"
         ).fetchone()[0]
 
         # 数据库文件大小

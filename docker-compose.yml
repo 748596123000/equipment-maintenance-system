@@ -15,8 +15,8 @@ services:
       dockerfile: Dockerfile
     container_name: equipment-maintenance-system
     ports:
-      - "8000:8000"   # FastAPI后端
-      - "8501:8501"   # Streamlit前端
+      - "8000:8000"
+      - "8501:8501"
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
@@ -28,17 +28,29 @@ services:
       - SQLITE_DB_PATH=/app/data/app.db
       - UPLOAD_DIR=/app/data/pdfs
       - IMAGE_DIR=/app/data/images
-      # LoongArch适配
       - CHROMA_DB_IMPL=duckdb+parquet
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "bash", "-c", "curl -f http://localhost:8000/health && curl -f http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 4G
           cpus: '2'
+
+networks:
+  default:
+    driver: bridge

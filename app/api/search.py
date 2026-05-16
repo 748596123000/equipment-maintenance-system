@@ -133,7 +133,7 @@ async def text_search(request: TextSearchRequest):
         }
     except Exception as e:
         logger.error(f"文本检索失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"检索失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
 @router.post("/keyword", summary="关键词检索")
@@ -177,7 +177,7 @@ async def keyword_search(request: KeywordSearchRequest):
         }
     except Exception as e:
         logger.error(f"关键词检索失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"检索失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
 @router.post("/hybrid", summary="混合检索")
@@ -224,7 +224,7 @@ async def hybrid_search(request: HybridSearchRequest):
         }
     except Exception as e:
         logger.error(f"混合检索失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"检索失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
 @router.post("/model", summary="设备型号检索")
@@ -268,7 +268,7 @@ async def model_search(request: ModelSearchRequest):
         }
     except Exception as e:
         logger.error(f"型号检索失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"检索失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
 @router.post("/image", summary="图片检索")
@@ -328,4 +328,4 @@ async def image_search(request: ImageSearchRequest):
         }
     except Exception as e:
         logger.error(f"图片检索失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"图片检索失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")

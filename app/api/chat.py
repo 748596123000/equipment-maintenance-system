@@ -15,6 +15,7 @@ import time
 import uuid
 from typing import Dict, List, Literal, Optional
 
+from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -25,12 +26,25 @@ from app.models.database import get_database
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
-# 响应缓存：完全相同的问题在1分钟内不重复调用LLM
-_response_cache: Dict[str, dict] = {}  # {question_hash: {"answer": ..., "timestamp": ..., "sources": ...}}
-_RESPONSE_CACHE_TTL = 60  # 响应缓存有效期1分钟
 
-# 会话级别的上一次查询缓存：相同session的连续相似问题复用检索结果
-_session_last_query: Dict[str, dict] = {}  # {session_id: {"question": ..., "results": ...}}
+async def _verify_stream_token(token: Optional[str]) -> dict:
+    from app.api.auth import _token_store
+    from datetime import datetime, timezone
+    if not token:
+        raise HTTPException(status_code=401, detail="未提供认证凭据")
+    token_data = _token_store.get(token)
+    if not token_data or datetime.now(timezone.utc) > token_data.get("expires_at", datetime.min.replace(tzinfo=timezone.utc)):
+        raise HTTPException(status_code=401, detail="无效或已过期的Token")
+    db = get_database()
+    user = db.get_user_by_id(token_data["user_id"])
+    if not user or not user.get("is_active"):
+        raise HTTPException(status_code=401, detail="用户不存在或已禁用")
+    return user
+
+_response_cache: TTLCache = TTLCache(maxsize=500, ttl=3600)
+_RESPONSE_CACHE_TTL = 60
+
+_session_last_query: TTLCache = TTLCache(maxsize=1000, ttl=7200)
 
 
 class ChatRequest(BaseModel):
@@ -42,6 +56,18 @@ class ChatRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20, description="检索结果数量")
     category: Optional[str] = Field(default=None, description="限定知识分类")
     image_base64: Optional[str] = Field(default=None, max_length=10_000_000, description="图片Base64编码（可选，用于图片问答）")
+
+
+@router.get("/sessions", summary="获取会话列表")
+async def list_sessions(current_user: dict = Depends(get_current_user)):
+    db = get_database()
+    conn = db.get_connection()
+    rows = conn.execute(
+        "SELECT id, user_id, created_at, updated_at FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC",
+        (current_user["id"],)
+    ).fetchall()
+    sessions = [{"id": r[0], "user_id": r[1], "created_at": r[2], "updated_at": r[3]} for r in rows]
+    return {"code": 200, "message": "查询成功", "data": {"sessions": sessions, "total": len(sessions)}}
 
 
 @router.post("/send", summary="发送问答请求")
@@ -238,7 +264,7 @@ async def chat_send(request: ChatRequest, current_user: dict = Depends(get_curre
         }
     except Exception as e:
         logger.error(f"问答生成失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"问答生成失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
 @router.get("/stream", summary="SSE流式问答")
@@ -247,7 +273,11 @@ async def chat_stream(
     session_id: Optional[str] = Query(default=None, description="会话ID"),
     search_mode: Literal["semantic", "keyword", "hybrid"] = Query(default="hybrid", description="检索模式"),
     top_k: int = Query(default=5, ge=1, le=20, description="检索结果数量"),
+    token: Optional[str] = Query(default=None, description="认证Token"),
 ):
+    current_user = None
+    if token:
+        current_user = await _verify_stream_token(token)
     """
     SSE流式问答接口，逐步返回回答内容
 
@@ -321,12 +351,13 @@ async def chat_stream(
                 yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
 
             # 步骤4: 保存对话记录
-            db.save_chat_message(session_id=session_id, role="user", content=question)
+            db.save_chat_message(session_id=session_id, role="user", content=question, user_id=current_user["id"] if current_user else None)
             db.save_chat_message(
                 session_id=session_id,
                 role="assistant",
                 content=full_answer,
                 sources=sources_info,
+                user_id=current_user["id"] if current_user else None,
             )
 
             # 发送完成信号

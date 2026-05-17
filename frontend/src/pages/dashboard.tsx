@@ -44,23 +44,40 @@ export default function DashboardPage() {
             { title: '知识分块', value: d.total_chunks || 0, icon: <MessageSquare className="h-5 w-5 text-orange-500" /> },
           ])
         } else {
-          const res = await api.get('/upload/my/stats')
-          const d = res.data
-          setStats([
-            { title: '知识库文档', value: d.total || 0, icon: <FileText className="h-5 w-5 text-blue-500" /> },
-            { title: '已完成', value: d.completed || 0, icon: <Search className="h-5 w-5 text-green-500" /> },
-            { title: '待审批', value: d.pending || 0, icon: <MessageSquare className="h-5 w-5 text-orange-500" /> },
-          ])
+          try {
+            const res = await api.get('/upload/my/stats')
+            const d = res.data
+            setStats([
+              { title: '知识库文档', value: d.total || 0, icon: <FileText className="h-5 w-5 text-blue-500" /> },
+              { title: '已完成', value: d.completed || 0, icon: <Search className="h-5 w-5 text-green-500" /> },
+              { title: '待审批', value: d.pending || 0, icon: <MessageSquare className="h-5 w-5 text-orange-500" /> },
+            ])
+          } catch {
+            setStats([
+              { title: '知识库文档', value: 0, icon: <FileText className="h-5 w-5 text-blue-500" /> },
+              { title: '已完成', value: 0, icon: <Search className="h-5 w-5 text-green-500" /> },
+              { title: '待审批', value: 0, icon: <MessageSquare className="h-5 w-5 text-orange-500" /> },
+            ])
+          }
         }
       } catch {
-        setStats([])
+        setStats([
+          { title: '知识库文档', value: 0, icon: <FileText className="h-5 w-5 text-blue-500" /> },
+          { title: '问答次数', value: 0, icon: <Search className="h-5 w-5 text-green-500" /> },
+          { title: '用户数量', value: 0, icon: <Users className="h-5 w-5 text-purple-500" /> },
+          { title: '知识分块', value: 0, icon: <MessageSquare className="h-5 w-5 text-orange-500" /> },
+        ])
       } finally {
         setLoading(false)
       }
     }
 
-    fetchStats()
-  }, [user?.role])
+    if (user) {
+      fetchStats()
+    } else {
+      setLoading(false)
+    }
+  }, [user?.role, user])
 
   return (
     <div className="space-y-6">
@@ -71,7 +88,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {loading
-          ? Array.from({ length: user?.role === 'admin' ? 4 : 3 }).map((_, i) => (
+          ? Array.from({ length: 4 }).map((_, i) => (
               <Card key={i}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">加载中...</CardTitle>

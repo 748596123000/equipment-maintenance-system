@@ -28,13 +28,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Trash2, Plus, FileText, Users, Search, MessageSquare, Activity } from "lucide-react";
+import { Trash2, Plus, FileText, Users, Search, MessageSquare, Activity, UserCheck, UserX, Clock } from "lucide-react";
 
 interface UserItem {
   id: string;
   username: string;
   role: string;
   created_at: string;
+  status?: string;
 }
 
 interface LogItem {
@@ -90,6 +91,8 @@ export default function AdminPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
 
+  const [pendingUsers, setPendingUsers] = useState<UserItem[]>([]);
+
   const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get<{ users: UserItem[] }>("/admin/users");
@@ -132,12 +135,39 @@ export default function AdminPage() {
     }
   }, []);
 
+  const fetchPendingUsers = useCallback(async () => {
+    try {
+      const res = await api.get<{ users: UserItem[]; total: number }>("/auth/pending-users");
+      setPendingUsers(res.data.users || []);
+    } catch {
+      setPendingUsers([]);
+    }
+  }, []);
+
+  const handleApproveUser = useCallback(async (userId: string) => {
+    try {
+      await api.post(`/auth/${userId}/approve`);
+      fetchPendingUsers();
+      fetchUsers();
+    } catch {
+    }
+  }, [fetchPendingUsers, fetchUsers]);
+
+  const handleRejectUser = useCallback(async (userId: string) => {
+    try {
+      await api.post(`/auth/${userId}/reject`);
+      fetchPendingUsers();
+    } catch {
+    }
+  }, [fetchPendingUsers]);
+
   useEffect(() => {
     fetchUsers();
     fetchLogs(1);
     fetchStats();
     fetchHealth();
-  }, [fetchUsers, fetchLogs, fetchStats, fetchHealth]);
+    fetchPendingUsers();
+  }, [fetchUsers, fetchLogs, fetchStats, fetchHealth, fetchPendingUsers]);
 
   const handleCreateUser = useCallback(async () => {
     try {
@@ -177,6 +207,14 @@ export default function AdminPage() {
       <Tabs defaultValue="users">
         <TabsList>
           <TabsTrigger value="users">用户管理</TabsTrigger>
+          <TabsTrigger value="approval">
+            用户审批
+            {pendingUsers.length > 0 && (
+              <Badge variant="destructive" className="ml-1.5 h-5 min-w-[20px] px-1 text-xs">
+                {pendingUsers.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="logs">系统日志</TabsTrigger>
           <TabsTrigger value="info">系统信息</TabsTrigger>
         </TabsList>
@@ -241,6 +279,72 @@ export default function AdminPage() {
               )}
             </TableBody>
           </Table>
+        </TabsContent>
+
+        <TabsContent value="approval" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">待审批用户</h2>
+            <Button variant="outline" size="sm" onClick={fetchPendingUsers}>
+              刷新
+            </Button>
+          </div>
+
+          {pendingUsers.length === 0 ? (
+            <Card>
+              <CardContent className="flex h-32 items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">暂无待审批用户</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>用户名</TableHead>
+                  <TableHead>注册时间</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead>操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingUsers.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">{u.username}</TableCell>
+                    <TableCell>{new Date(u.created_at).toLocaleString("zh-CN")}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">
+                        待审批
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleApproveUser(u.id)}
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                        >
+                          <UserCheck className="mr-1 h-3.5 w-3.5" />
+                          通过
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRejectUser(u.id)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <UserX className="mr-1 h-3.5 w-3.5" />
+                          拒绝
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
 
         <TabsContent value="logs" className="space-y-4">

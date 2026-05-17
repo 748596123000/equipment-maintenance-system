@@ -38,6 +38,8 @@ import {
   RefreshCw,
   Trash2,
   XCircle,
+  Download,
+  Package,
 } from 'lucide-react'
 
 interface SystemConfig {
@@ -126,6 +128,18 @@ const VISION_BACKENDS = [
   { value: 'local', label: '本地模型（需GPU）' },
 ]
 
+interface ModelItem {
+  id: string
+  name: string
+  type: string
+  size: string
+  description: string
+  recommended: boolean
+  downloaded: boolean
+  download_status: string | null
+  download_progress: number
+}
+
 export default function ApiSettingsPage() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin'
@@ -142,6 +156,10 @@ export default function ApiSettingsPage() {
   const [gpuLoading, setGpuLoading] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
   const gpuRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [models, setModels] = useState<ModelItem[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set())
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -181,10 +199,100 @@ export default function ApiSettingsPage() {
     }
   }
 
+  const fetchModels = useCallback(async () => {
+    try {
+      setModelsLoading(true)
+      const res = await api.get<{ models: ModelItem[] }>('/models/available')
+      setModels(res.data.models || [])
+    } catch {
+      setModels([])
+    } finally {
+      setModelsLoading(false)
+    }
+  }, [])
+
+  const handleDownloadModel = async (modelId: string) => {
+    try {
+      setDownloadingIds(prev => new Set(prev).add(modelId))
+      await api.post('/models/download', { model_id: modelId })
+      pollDownloadStatus(modelId)
+    } catch {
+      setDownloadingIds(prev => {
+        const next = new Set(prev)
+        next.delete(modelId)
+        return next
+      })
+      setMessage({ type: 'error', text: '启动下载失败' })
+    }
+  }
+
+  const pollDownloadStatus = useCallback((modelId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get<{ status: string; progress: number }>(`/models/download/${encodeURIComponent(modelId)}/status`)
+        const { status, progress } = res.data
+        setModels(prev => prev.map(m =>
+          m.id === modelId ? { ...m, download_status: status, download_progress: progress } : m
+        ))
+        if (status === 'completed') {
+          clearInterval(interval)
+          setDownloadingIds(prev => {
+            const next = new Set(prev)
+            next.delete(modelId)
+            return next
+          })
+          setModels(prev => prev.map(m =>
+            m.id === modelId ? { ...m, downloaded: true } : m
+          ))
+          setMessage({ type: 'success', text: `${modelId.split('/').pop()} 下载完成` })
+          fetchGpuStatus()
+        } else if (status === 'failed') {
+          clearInterval(interval)
+          setDownloadingIds(prev => {
+            const next = new Set(prev)
+            next.delete(modelId)
+            return next
+          })
+          setMessage({ type: 'error', text: `${modelId.split('/').pop()} 下载失败` })
+        }
+      } catch {
+        clearInterval(interval)
+      }
+    }, 3000)
+  }, [fetchGpuStatus])
+
+  const handleDeleteModel = async (modelId: string) => {
+    try {
+      await api.delete(`/models/download/${encodeURIComponent(modelId)}`)
+      setModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, downloaded: false, download_status: null, download_progress: 0 } : m
+      ))
+      setMessage({ type: 'success', text: '模型已删除' })
+    } catch {
+      setMessage({ type: 'error', text: '删除模型失败' })
+    }
+  }
+
+  const handleSetVisionModel = async (modelId: string) => {
+    try {
+      await api.put('/models/vision-model', { model_id: modelId })
+      updateField('local_vision_model', modelId)
+      setMessage({ type: 'success', text: `视觉模型已切换为 ${modelId.split('/').pop()}` })
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { detail?: string } } }
+        setMessage({ type: 'error', text: axiosErr.response?.data?.detail || '切换模型失败' })
+      } else {
+        setMessage({ type: 'error', text: '切换模型失败' })
+      }
+    }
+  }
+
   useEffect(() => {
     fetchConfig()
     fetchGpuStatus()
-  }, [fetchConfig, fetchGpuStatus])
+    fetchModels()
+  }, [fetchConfig, fetchGpuStatus, fetchModels])
 
   useEffect(() => {
     gpuRefreshRef.current = setInterval(fetchGpuStatus, 30000)
@@ -560,6 +668,123 @@ export default function ApiSettingsPage() {
               </p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-emerald-500" />
+            模型管理
+          </CardTitle>
+          <CardDescription>
+            下载和管理本地推理模型，下载后可离线使用
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={fetchModels} disabled={modelsLoading}>
+              {modelsLoading ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1 h-3 w-3" />
+              )}
+              刷新
+            </Button>
+          </div>
+
+          {models.length === 0 && !modelsLoading ? (
+            <div className="flex items-center justify-center h-20 text-muted-foreground text-sm">
+              暂无可用模型
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {models.map((model) => (
+                <div
+                  key={model.id}
+                  className="rounded-lg border p-3 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{model.name}</span>
+                      {model.recommended && (
+                        <Badge variant="default" className="text-xs bg-blue-500">推荐</Badge>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        {model.type === 'vision' ? '视觉' : model.type === 'ocr' ? 'OCR' : model.type}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{model.size}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {model.downloaded ? (
+                        <>
+                          <Badge variant="default" className="text-xs bg-green-500">已下载</Badge>
+                          {model.type === 'vision' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-6"
+                              onClick={() => handleSetVisionModel(model.id)}
+                            >
+                              设为视觉模型
+                            </Button>
+                          )}
+                          {model.id !== 'PaddleOCR/PPOCRv4' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteModel(model.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </>
+                      ) : model.download_status === 'downloading' ? (
+                        <div className="flex items-center gap-2 w-32">
+                          <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-blue-500 transition-all"
+                              style={{ width: `${model.download_progress}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">{model.download_progress}%</span>
+                        </div>
+                      ) : model.download_status === 'failed' ? (
+                        <>
+                          <Badge variant="destructive" className="text-xs">失败</Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs h-6"
+                            onClick={() => handleDownloadModel(model.id)}
+                          >
+                            重试
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-6"
+                          disabled={downloadingIds.has(model.id)}
+                          onClick={() => handleDownloadModel(model.id)}
+                        >
+                          {downloadingIds.has(model.id) ? (
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          ) : (
+                            <Download className="mr-1 h-3 w-3" />
+                          )}
+                          下载
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{model.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

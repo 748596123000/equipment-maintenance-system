@@ -179,6 +179,7 @@ def create_app() -> FastAPI:
     from app.api.guide import router as guide_router
     from app.api.case import router as case_router
     from app.api.admin import router as admin_router
+    from app.api.models import router as models_router
 
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["用户认证"])
     app.include_router(upload_router, prefix="/api/v1/upload", tags=["文件上传"])
@@ -187,6 +188,7 @@ def create_app() -> FastAPI:
     app.include_router(guide_router, prefix="/api/v1/guide", tags=["作业指引"])
     app.include_router(case_router, prefix="/api/v1/case", tags=["检修案例"])
     app.include_router(admin_router, prefix="/api/v1/admin", tags=["系统管理"])
+    app.include_router(models_router, prefix="/api/v1/models", tags=["模型管理"])
 
     # ========== 全局异常处理 ==========
     @app.exception_handler(HTTPException)

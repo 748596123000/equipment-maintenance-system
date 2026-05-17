@@ -131,6 +131,8 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="用户名（至少3个字符）")
     password: str = Field(..., min_length=6, max_length=100, description="密码（至少6个字符）")
+    captcha_id: str = Field(default="", description="验证码ID")
+    captcha_code: str = Field(default="", description="验证码")
 
 
 class ChangePasswordRequest(BaseModel):
@@ -243,7 +245,7 @@ async def get_captcha():
         "created_at": time.time(),
     }
 
-    return {
+    result = {
         "code": 200,
         "message": "获取成功",
         "data": {
@@ -251,6 +253,12 @@ async def get_captcha():
             "captcha_image": f"data:image/png;base64,{image_base64}",
         },
     }
+
+    from app.config import settings
+    if settings.DEBUG:
+        result["data"]["captcha_code"] = code
+
+    return result
 
 
 @router.post("/login", summary="用户登录")
@@ -317,6 +325,17 @@ async def login(request: LoginRequest):
 
 @router.post("/register", summary="用户注册")
 async def register(request: RegisterRequest):
+    if not request.captcha_id or not request.captcha_code:
+        raise HTTPException(status_code=400, detail="请输入验证码")
+
+    captcha_data = _captcha_store.pop(request.captcha_id, None)
+    if not captcha_data:
+        raise HTTPException(status_code=400, detail="验证码已过期，请重新获取")
+    if time.time() - captcha_data["created_at"] > _captcha_expire_seconds:
+        raise HTTPException(status_code=400, detail="验证码已过期，请重新获取")
+    if captcha_data["code"].upper() != request.captcha_code.upper():
+        raise HTTPException(status_code=400, detail="验证码错误")
+
     db = get_database()
 
     existing = db.get_user_by_username_all(request.username)

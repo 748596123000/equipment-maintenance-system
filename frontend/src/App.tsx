@@ -4,6 +4,7 @@ import { AppLayout } from './components/layout/app-layout'
 import { AdminGuard } from './components/guards/admin-guard'
 
 const LoginPage = lazy(() => import('./pages/login'))
+const RegisterPage = lazy(() => import('./pages/register'))
 const DashboardPage = lazy(() => import('./pages/dashboard'))
 const SearchPage = lazy(() => import('./pages/search'))
 const GuidePage = lazy(() => import('./pages/guide'))
@@ -28,6 +29,7 @@ export default function App() {
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route path="/" element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="search" element={<SearchPage />} />

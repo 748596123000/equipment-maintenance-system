@@ -1,8 +1,8 @@
 """
-PDF数据库管理页面（仅管理员可见）
+文档数据库管理页面（仅管理员可见）
 
-提供PDF文档数据库管理功能：
-- 显示所有已审批通过且处理完成的PDF文档列表
+提供文档数据库管理功能：
+- 显示所有已审批通过且处理完成的文档列表
 - 支持搜索过滤
 - 支持删除文档（同时删除ChromaDB中的向量数据）
 - 显示知识库统计信息
@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from ui.components.common import hide_login_nav, get_api_base, get_user_headers, require_admin, init_api_base, safe_error_msg
 
 st.set_page_config(
-    page_title="PDF数据库 - 设备检修知识系统",
+    page_title="文档数据库 - 设备检修知识系统",
     page_icon="📚",
 )
 
@@ -53,7 +53,7 @@ def render_kb_stats():
 
 def render_document_list():
     """渲染PDF文档列表"""
-    st.markdown("### 📚 PDF文档列表")
+    st.markdown("### 📚 文档列表")
 
     # 搜索过滤
     col_search, col_refresh = st.columns([4, 1])
@@ -95,7 +95,7 @@ def render_document_list():
                 ]
 
             if not completed_docs:
-                st.info("暂无已入库的PDF文档")
+                st.info("暂无已入库的文档")
                 return
 
             st.success(f"共 {len(completed_docs)} 个已入库文档")
@@ -187,7 +187,7 @@ def _delete_document(document_id: str, filename: str):
 def main():
     init_api_base()
 
-    st.title("📚 PDF数据库")
+    st.title("📚 文档数据库")
 
     render_kb_stats()
     st.markdown("---")

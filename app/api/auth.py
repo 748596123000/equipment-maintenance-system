@@ -16,15 +16,19 @@
 
 import asyncio
 import hashlib
+import io
 import logging
+import random
+import string
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 
 from app.models.database import get_database
@@ -49,10 +53,11 @@ async def start_cleanup_task():
 
 security = HTTPBearer(auto_error=False)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 _token_store: dict = {}
 _token_expire_hours = 24
+
+_captcha_store: dict = {}
+_captcha_expire_seconds = 300
 
 
 async def _cleanup_expired_tokens():
@@ -77,6 +82,10 @@ async def _cleanup_expired_tokens():
             ]
             if not _api_call_counts[ip]:
                 del _api_call_counts[ip]
+        current_time = time.time()
+        for cid in list(_captcha_store.keys()):
+            if current_time - _captcha_store[cid]["created_at"] > _captcha_expire_seconds:
+                del _captcha_store[cid]
 
 
 def _check_login_rate_limit(username: str) -> None:
@@ -115,6 +124,8 @@ async def rate_limit_dependency(request: Request):
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50, description="用户名")
     password: str = Field(..., min_length=1, max_length=100, description="密码")
+    captcha_id: str = Field(default="", description="验证码ID")
+    captcha_code: str = Field(default="", description="验证码")
 
 
 class RegisterRequest(BaseModel):
@@ -128,12 +139,12 @@ class ChangePasswordRequest(BaseModel):
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     if hashed_password.startswith("$2b$") or hashed_password.startswith("$2a$"):
-        return pwd_context.verify(plain_password, hashed_password)
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     legacy_hash = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
     return legacy_hash == hashed_password
 
@@ -176,8 +187,85 @@ async def require_admin(
     return current_user
 
 
+def _generate_captcha_image(code: str) -> str:
+    from PIL import Image, ImageDraw, ImageFont
+
+    width, height = 120, 40
+    img = Image.new("RGB", (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    for _ in range(6):
+        x1 = random.randint(0, width)
+        y1 = random.randint(0, height)
+        x2 = random.randint(0, width)
+        y2 = random.randint(0, height)
+        draw.line([(x1, y1), (x2, y2)], fill=(200, 200, 200), width=1)
+
+    for _ in range(30):
+        x = random.randint(0, width)
+        y = random.randint(0, height)
+        draw.point((x, y), fill=(180, 180, 180))
+
+    try:
+        font = ImageFont.truetype("arial.ttf", 28)
+    except (IOError, OSError):
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+        except (IOError, OSError):
+            font = ImageFont.load_default()
+
+    colors = [
+        (0, 0, 180), (180, 0, 0), (0, 130, 0),
+        (130, 0, 130), (0, 130, 130), (180, 100, 0),
+    ]
+    char_width = width // (len(code) + 1)
+    for i, ch in enumerate(code):
+        color = random.choice(colors)
+        x = char_width * i + random.randint(5, 12)
+        y = random.randint(2, 8)
+        draw.text((x, y), ch, fill=color, font=font)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    import base64
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+@router.get("/captcha", summary="获取验证码")
+async def get_captcha():
+    code = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    captcha_id = uuid.uuid4().hex
+
+    image_base64 = _generate_captcha_image(code)
+
+    _captcha_store[captcha_id] = {
+        "code": code,
+        "created_at": time.time(),
+    }
+
+    return {
+        "code": 200,
+        "message": "获取成功",
+        "data": {
+            "captcha_id": captcha_id,
+            "captcha_image": f"data:image/png;base64,{image_base64}",
+        },
+    }
+
+
 @router.post("/login", summary="用户登录")
 async def login(request: LoginRequest):
+    if not request.captcha_id or not request.captcha_code:
+        raise HTTPException(status_code=400, detail="请输入验证码")
+
+    captcha_data = _captcha_store.pop(request.captcha_id, None)
+    if not captcha_data:
+        raise HTTPException(status_code=400, detail="验证码已过期，请重新获取")
+    if time.time() - captcha_data["created_at"] > _captcha_expire_seconds:
+        raise HTTPException(status_code=400, detail="验证码已过期，请重新获取")
+    if captcha_data["code"].upper() != request.captcha_code.upper():
+        raise HTTPException(status_code=400, detail="验证码错误")
+
     db = get_database()
     _check_login_rate_limit(request.username)
 

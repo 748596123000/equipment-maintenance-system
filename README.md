@@ -2,9 +2,10 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/FastAPI-0.115.0-009688?style=flat-square&logo=fastapi" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Streamlit-1.40.0-FF4B4B?style=flat-square&logo=streamlit" alt="Streamlit">
+  <img src="https://img.shields.io/badge/React-18+-61DAFB?style=flat-square&logo=react" alt="React">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python" alt="Python">
   <img src="https://img.shields.io/badge/ChromaDB-0.5.0-FF6B6B?style=flat-square" alt="ChromaDB">
+  <img src="https://img.shields.io/badge/GPU-CUDA%20Accelerated-76B900?style=flat-square&logo=nvidia" alt="GPU">
   <img src="https://img.shields.io/badge/Security-Hardened-brightgreen?style=flat-square" alt="Security">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="License">
 </p>
@@ -17,6 +18,7 @@
   <a href="#功能特性">功能特性</a> •
   <a href="#技术架构">技术架构</a> •
   <a href="#快速开始">快速开始</a> •
+  <a href="#gpu加速">GPU加速</a> •
   <a href="#安全特性">安全特性</a> •
   <a href="#部署指南">部署指南</a>
 </p>
@@ -31,11 +33,13 @@
 
 ### 核心能力
 
-- 🔍 **多模态知识检索** — 支持文本语义检索、关键词检索、混合检索
+- 🔍 **多模态知识检索** — 支持文本语义检索、关键词检索、混合检索、以图搜图
 - 🤖 **AI智能问答** — 基于大模型的检修知识问答，支持上下文记忆与图片输入
 - 📋 **作业指引生成** — 自动生成标准化检修作业指导书，支持导出
 - 📚 **案例管理** — 检修案例的创建、审核、检索与复用
-- 📄 **文档管理** — PDF文档上传、解析、向量化存储与在线预览
+- 📄 **文档管理** — 多格式文档上传、OCR识别、向量化存储与在线预览
+- ⚡ **GPU加速** — PaddleOCR GPU加速 + 本地视觉模型推理，支持CPU/API自动降级
+- 🎯 **验证码防护** — 登录图形验证码，防止暴力破解
 - 👥 **用户权限管理** — 管理员审批制用户注册，细粒度权限控制
 - 🔒 **安全加固** — Bearer Token认证、bcrypt密码哈希、速率限制、XSS/SQL注入/路径遍历防护
 
@@ -75,11 +79,19 @@
 
 ### 5. 文档管理模块
 
-- 📤 PDF批量上传与自动解析
-- 🔍 PDF内容解析、分块与向量化存储
-- 👁️ PDF在线预览
+- 📤 多格式文档上传（PDF/Word/Excel/PPT/图片等）
+- 🔍 智能解析：PDF提取 + OCR文字识别 + 视觉模型图片描述
+- 👁️ 文档在线预览
 - ✅ 文档审批流程（待审批/已通过/已拒绝）
 - 🏷️ 文档分类与关键词搜索
+
+### 6. API管理模块
+
+- ⚙️ 在线配置LLM/Embedding模型参数
+- 🔍 检索参数调优（Top K、相似度阈值）
+- 📦 文本分块策略配置
+- 🖥️ GPU状态实时监控
+- 👁️ OCR/视觉模型后端切换
 
 ---
 
@@ -89,23 +101,23 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        前端层 (Streamlit)                    │
+│                     前端层 (React + Vite)                     │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │ 登录页面  │ │ 知识检索  │ │ 作业指引  │ │ 案例管理  │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
-│  │ 知识管理  │ │ 系统管理  │ │ PDF数据库 │ │ 知识库    │       │
+│  │ 知识管理  │ │ 知识库    │ │ 个人中心  │ │ API管理   │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 └────────────────────────┬────────────────────────────────────┘
-                         │ Bearer Token / HTTPS
+                         │ Bearer Token / Vite Proxy
 ┌────────────────────────▼────────────────────────────────────┐
 │                      API层 (FastAPI)                         │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │ 用户认证  │ │ 知识检索  │ │ 文件上传  │ │ AI问答   │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐                     │
-│  │ 作业指引  │ │ 案例管理  │ │ 系统管理  │                     │
-│  └──────────┘ └──────────┘ └──────────┘                     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
+│  │ 作业指引  │ │ 案例管理  │ │ 系统管理  │ │ GPU状态   │       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 └────────────────────────┬────────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────────┐
@@ -113,6 +125,10 @@
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
 │  │ Embedding服务 │ │ LLM服务      │ │ RAG引擎      │        │
 │  │ (通义千问)    │ │ (通义千问)    │ │ (检索增强)   │        │
+│  └──────────────┘ └──────────────┘ └──────────────┘        │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        │
+│  │ OCR服务      │ │ 视觉模型服务  │ │ GPU检测      │        │
+│  │ (PaddleOCR)  │ │ (Qwen2-VL)   │ │ (CUDA)      │        │
 │  └──────────────┘ └──────────────┘ └──────────────┘        │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -129,16 +145,57 @@
 
 | 层级 | 技术 | 版本 | 说明 |
 |------|------|------|------|
-| 前端 | Streamlit | 1.40.0 | 数据应用框架 |
+| 前端 | React | 18+ | 现代化SPA界面 |
+| 前端构建 | Vite | 5+ | 极速开发与构建 |
+| UI组件 | shadcn/ui + Radix | - | 高质量可访问组件 |
 | 后端 | FastAPI | 0.115.0 | 高性能Web框架 |
 | 服务器 | Uvicorn | 0.32.0 | ASGI服务器 |
 | 数据库 | SQLite | - | 轻量级关系数据库 |
 | 向量库 | ChromaDB | 0.5.0 | 向量数据库(duckdb后端) |
 | 大模型 | 通义千问 | qwen-max | 大语言模型 |
 | 向量化 | 通义千问 Embedding | text-embedding-v3 | 文本向量化(1024维) |
+| OCR | PaddleOCR | 2.8+ | GPU加速文字识别 |
+| 视觉模型 | Qwen2-VL | 2B-Instruct | 本地图片理解 |
 | 密码哈希 | bcrypt | 4.0.1 | 安全密码存储 |
-| 缓存 | cachetools | 5.3.3 | LRU/TTL缓存 |
-| 容器化 | Docker + Docker Compose | - | 多阶段构建+安全加固 |
+| 容器化 | Docker + Docker Compose | - | 多阶段构建+GPU支持 |
+
+---
+
+## GPU加速
+
+系统支持GPU加速文档解析和OCR识别，提供完整的降级链：
+
+```
+GPU模式 → CPU模式 → API模式
+```
+
+### GPU加速功能
+
+| 组件 | GPU模式 | CPU模式 | API模式 |
+|------|---------|---------|---------|
+| OCR识别 | PaddleOCR + CUDA | PaddleOCR + CPU | 关闭 |
+| 图片描述 | Qwen2-VL 本地推理 | - | DashScope qwen-vl-max |
+| GPU检测 | torch + paddle 自动检测 | - | - |
+
+### GPU部署
+
+```bash
+# 安装GPU依赖
+pip install -r requirements-gpu.txt
+
+# 使用GPU版Docker部署
+docker compose -f docker-compose.gpu.yml up -d --build
+```
+
+### GPU配置
+
+通过API管理页面可在线配置：
+
+- **OCR后端**：auto / paddleocr / none
+- **OCR GPU加速**：开启/关闭
+- **OCR语言**：中文/英文/中英混合
+- **视觉模型后端**：auto / dashscope / local
+- **本地视觉模型**：Qwen/Qwen2-VL-2B-Instruct
 
 ---
 
@@ -147,7 +204,8 @@
 ### 环境要求
 
 - Python 3.10+
-- 4GB+ 内存
+- Node.js 18+（前端构建）
+- 4GB+ 内存（GPU模式需8GB+）
 - 通义千问 API Key ([阿里云DashScope](https://dashscope.console.aliyun.com/))
 
 ### 安装步骤
@@ -159,7 +217,7 @@ git clone https://github.com/748596123000/equipment-maintenance-system.git
 cd equipment-maintenance-system
 ```
 
-2. **创建虚拟环境**
+2. **创建虚拟环境并安装后端依赖**
 
 ```bash
 python -m venv .venv
@@ -167,14 +225,19 @@ python -m venv .venv
 .venv\Scripts\activate
 # Linux/Mac
 source .venv/bin/activate
+
+pip install -r requirements.txt
+# 如需GPU加速
+pip install -r requirements-gpu.txt
 ```
 
-3. **安装依赖**
+3. **安装前端依赖并构建**
 
 ```bash
-pip install -r requirements.txt
-# 如需开发/测试依赖
-pip install -r requirements-dev.txt
+cd frontend
+npm install
+npm run build
+cd ..
 ```
 
 4. **配置环境变量**
@@ -190,7 +253,7 @@ cp .env.example .env
 DASHSCOPE_API_KEY=your-api-key-here
 ENVIRONMENT=development
 DEBUG=False
-CORS_ORIGINS=["http://localhost:8501"]
+CORS_ORIGINS=["http://localhost:3000"]
 ALLOWED_HOSTS=["localhost", "127.0.0.1"]
 ```
 
@@ -202,11 +265,18 @@ ALLOWED_HOSTS=["localhost", "127.0.0.1"]
 # 终端1：启动后端
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# 终端2：启动前端
-streamlit run ui/app.py
+# 终端2：启动前端开发服务器
+cd frontend
+npm run dev
 ```
 
-方式二：一键启动
+方式二：一键启动（Windows）
+
+```powershell
+.\start.bat
+```
+
+方式三：一键启动（Linux）
 
 ```bash
 bash deploy/start.sh
@@ -214,7 +284,7 @@ bash deploy/start.sh
 
 6. **访问系统**
 
-- 前端界面：http://localhost:8501
+- 前端界面：http://localhost:3000
 - API文档：http://localhost:8000/docs (DEBUG=True时)
 - 健康检查：http://localhost:8000/health
 
@@ -234,10 +304,10 @@ bash deploy/start.sh
 
 - ✅ **Bearer Token 认证** — HTTPBearer + 24小时过期 + 服务端Token存储
 - ✅ **bcrypt 密码哈希** — 自动升级旧版SHA256哈希，登录时无缝迁移
+- ✅ **图形验证码** — 登录强制验证码，防止暴力破解
 - ✅ **路由级认证依赖** — 所有API端点默认需要认证
 - ✅ **对象级授权** — 资源所有权校验（案例/指引/会话/文档），防止越权访问
 - ✅ **管理员审批制** — 用户注册需管理员审批
-- ✅ **SSE流认证** — GET端点通过Token查询参数验证身份
 - ✅ **登录枚举防护** — 统一错误消息，防止账户枚举攻击
 
 ### 防护机制
@@ -246,19 +316,10 @@ bash deploy/start.sh
 - ✅ **XSS防护** — html.escape() 转义所有动态内容
 - ✅ **SQL注入防护** — 参数化查询 + 列名白名单 + LIKE转义
 - ✅ **路径遍历防护** — basename + realpath 校验
-- ✅ **文件上传安全** — 类型/大小/PDF魔数三重校验
+- ✅ **文件上传安全** — 类型/大小/魔数三重校验
 - ✅ **错误信息脱敏** — 前后端统一友好错误提示，不暴露内部实现
 - ✅ **Token自动清理** — 后台异步任务每小时清理过期Token
-
-### 安全响应头
-
-| 响应头 | 值 | 说明 |
-|--------|-----|------|
-| X-Content-Type-Options | nosniff | 防止MIME嗅探 |
-| X-Frame-Options | DENY | 防止点击劫持 |
-| Content-Security-Policy | default-src 'self'; ... | 防止XSS注入 |
-| Strict-Transport-Security | max-age=31536000 | 强制HTTPS |
-| Permissions-Policy | camera=(), microphone=() | 限制浏览器API |
+- ✅ **验证码一次性使用** — 验证码校验后立即销毁，5分钟过期
 
 ### Docker安全
 
@@ -269,154 +330,56 @@ bash deploy/start.sh
 - ✅ 日志大小限制
 - ✅ 双服务健康检查
 
-### 配置安全
-
-- 生产环境强制 DEBUG=False
-- 依赖版本精确锁定（含bcrypt兼容版本）
-- 敏感文件排除在版本控制外（.env, .initial_passwords, *.db, data/）
-- 开发依赖独立管理（requirements-dev.txt）
-- CI集成安全扫描（bandit）
-
 ---
 
 ## 部署指南
 
 ### 方式一：Docker部署（推荐生产环境）
 
-1. **配置环境变量**
+**CPU版：**
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入API Key和生产环境配置
+# 编辑 .env
+docker compose up -d --build
 ```
 
-2. **构建并启动**
+**GPU版（需NVIDIA Container Toolkit）：**
 
 ```bash
-docker-compose up -d --build
-```
-
-3. **查看状态**
-
-```bash
-docker-compose ps
-docker-compose logs -f
-```
-
-4. **停止服务**
-
-```bash
-docker-compose down
+cp .env.example .env
+# 编辑 .env
+docker compose -f docker-compose.gpu.yml up -d --build
 ```
 
 ### 方式二：银河麒麟/龙芯架构部署
 
-项目提供完整的麒麟Linux部署脚本，支持LoongArch架构：
-
 ```bash
-# 1. 上传项目到服务器
 scp -r equipment-maintenance-system/ user@kylin-server:/opt/
-
-# 2. 执行部署脚本
 cd /opt/equipment-maintenance-system
 bash deploy/kylin_setup.sh
 ```
 
-部署脚本会自动：
-- 检测系统架构和包管理器
-- 安装Python 3.10+和系统依赖
-- 创建虚拟环境并安装Python依赖
-- 配置数据目录和权限
-- 生成初始管理员密码
-
 ### 方式三：手动部署
-
-1. **安装依赖**
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-2. **配置环境**
+cd frontend && npm install && npm run build && cd ..
 
-```bash
 cp .env.example .env
 # 编辑 .env
-```
 
-3. **启动服务**
-
-```bash
-# 使用启动脚本（含健康检查和PID管理）
 bash deploy/start.sh
-
-# 或手动启动
-uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-streamlit run ui/app.py --server.port 8501 &
-```
-
-4. **停止服务**
-
-```bash
-bash deploy/stop.sh
-```
-
-### 生产环境Nginx配置
-
-```nginx
-# HTTP重定向到HTTPS
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-# HTTPS主配置
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    # API后端
-    location /api/ {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # 健康检查
-    location /health {
-        proxy_pass http://localhost:8000;
-    }
-
-    # Streamlit前端（含WebSocket支持）
-    location / {
-        proxy_pass http://localhost:8501;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
 ```
 
 ### 数据备份
 
 ```bash
-# 执行备份脚本（SQLite + ChromaDB + 上传文件）
 bash deploy/backup.sh
-
 # 备份文件保存在 ./backups/ 目录
-# 默认保留最近7个备份
 ```
 
 ---
@@ -427,60 +390,70 @@ bash deploy/backup.sh
 equipment-maintenance-system/
 ├── app/                          # 后端API
 │   ├── api/                      # API路由
-│   │   ├── auth.py              # 用户认证（Bearer Token + bcrypt）
+│   │   ├── auth.py              # 用户认证（验证码 + Bearer Token + bcrypt）
 │   │   ├── chat.py              # AI问答（SSE流式 + 会话管理）
-│   │   ├── search.py            # 知识检索（语义/关键词/混合）
-│   │   ├── upload.py            # 文件上传（PDF解析 + 向量化）
+│   │   ├── search.py            # 知识检索（语义/关键词/混合/图片）
+│   │   ├── upload.py            # 文件上传（多格式解析 + 向量化）
 │   │   ├── guide.py             # 作业指引（SSE流式生成）
 │   │   ├── case.py              # 案例管理（审核流程）
-│   │   └── admin.py             # 系统管理（配置持久化）
+│   │   └── admin.py             # 系统管理（配置 + GPU状态）
 │   ├── core/                     # 核心逻辑
-│   │   ├── retriever.py         # 检索引擎（LRUCache）
-│   │   ├── rag_engine.py        # RAG引擎（LRUCache）
+│   │   ├── retriever.py         # 检索引擎
+│   │   ├── rag_engine.py        # RAG引擎
 │   │   ├── guide_generator.py   # 指引生成
 │   │   ├── chunker.py           # 文本分块
-│   │   └── pdf_parser.py        # PDF解析（并发图片处理）
+│   │   ├── pdf_parser.py        # PDF解析（GPU视觉模型）
+│   │   ├── document_parser.py   # 多格式文档解析（OCR + 视觉）
+│   │   └── image_retriever.py   # 图片检索
 │   ├── models/                   # 数据模型
 │   │   └── database.py          # 数据库操作
 │   ├── services/                 # 外部服务
 │   │   ├── llm_service.py       # 大模型服务
-│   │   └── embedding_service.py # 向量化服务（LRUCache）
+│   │   ├── embedding_service.py # 向量化服务
+│   │   ├── ocr_service.py       # OCR服务（PaddleOCR + GPU）
+│   │   └── vision_service.py    # 视觉模型服务（Qwen2-VL + DashScope降级）
 │   ├── utils/                    # 工具函数
-│   │   ├── helpers.py           # 公共工具（JSON提取等）
+│   │   ├── helpers.py           # 公共工具
+│   │   ├── gpu_utils.py         # GPU检测与缓存管理
 │   │   └── init_data.py         # 示例数据自动导入
-│   ├── config.py                # 配置管理（环境变量+数据库持久化）
+│   ├── config.py                # 配置管理（环境变量 + OCR/视觉/GPU配置）
 │   └── main.py                  # FastAPI入口（安全中间件）
-├── ui/                           # 前端界面
-│   ├── app.py                   # Streamlit主应用
-│   ├── pages/                   # 页面组件
-│   │   ├── 00_登录.py           # 登录注册
-│   │   ├── 01_首页.py           # 首页仪表盘
-│   │   ├── 02_知识检索.py       # 智能问答
-│   │   ├── 03_作业指引.py       # 指引生成
-│   │   ├── 04_知识管理.py       # 文档审批
-│   │   ├── 05_系统管理.py       # 系统配置
-│   │   ├── 06_PDF数据库.py      # PDF管理
-│   │   └── 07_知识库.py         # 知识库浏览
-│   └── components/              # UI组件
-│       ├── common.py            # 公共工具（认证/错误处理）
-│       ├── preview.py           # PDF预览
-│       └── chat_component.py    # 聊天组件
+├── frontend/                     # React前端
+│   ├── src/
+│   │   ├── pages/               # 页面组件
+│   │   │   ├── login.tsx        # 登录（验证码）
+│   │   │   ├── dashboard.tsx    # 首页仪表盘
+│   │   │   ├── search.tsx       # 知识检索
+│   │   │   ├── guide.tsx        # 作业指引
+│   │   │   ├── knowledge.tsx    # 知识管理
+│   │   │   ├── knowledge-base.tsx # 知识库
+│   │   │   ├── admin.tsx        # 系统管理
+│   │   │   ├── profile.tsx      # 个人中心
+│   │   │   └── api-settings.tsx # API管理（GPU状态监控）
+│   │   ├── components/          # UI组件
+│   │   │   ├── layout/          # 布局（侧边栏/头部）
+│   │   │   ├── guards/          # 路由守卫（认证/权限）
+│   │   │   ├── document/        # 文档组件
+│   │   │   └── ui/              # shadcn/ui基础组件
+│   │   ├── stores/              # Zustand状态管理
+│   │   └── lib/                 # 工具库（API客户端）
+│   ├── vite.config.ts           # Vite配置（代理）
+│   └── package.json             # 前端依赖
 ├── samples/                      # 示例数据
 │   └── 摩托车发动机维修手册.pdf  # 内置维修手册
 ├── deploy/                       # 部署脚本
-│   ├── start.sh                 # 启动脚本（健康检查+PID管理）
-│   ├── stop.sh                  # 停止脚本（优雅停机）
-│   ├── backup.sh                # 备份脚本（验证+保留策略）
+│   ├── start.sh                 # 启动脚本
+│   ├── stop.sh                  # 停止脚本
+│   ├── backup.sh                # 备份脚本
 │   └── kylin_setup.sh           # 银河麒麟部署
-├── tests/                        # 测试
-├── .github/workflows/ci.yml     # CI（测试+安全扫描+Docker构建）
 ├── .env.example                  # 环境变量示例
 ├── .gitignore                    # Git忽略文件
-├── .dockerignore                 # Docker忽略文件
-├── Dockerfile                    # Docker镜像（多阶段构建）
-├── docker-compose.yml            # Docker编排（安全加固）
+├── Dockerfile                    # Docker镜像（CPU版）
+├── Dockerfile.gpu                # Docker镜像（GPU版，NVIDIA CUDA）
+├── docker-compose.yml            # Docker编排（CPU版）
+├── docker-compose.gpu.yml        # Docker编排（GPU版）
 ├── requirements.txt              # Python依赖
-├── requirements-dev.txt          # 开发/测试依赖
+├── requirements-gpu.txt          # GPU加速依赖
 └── README.md                     # 项目介绍
 ```
 
@@ -489,8 +462,8 @@ equipment-maintenance-system/
 ## 开发团队
 
 - **项目**: 第15届中国软件杯竞赛作品
-- **技术栈**: FastAPI + Streamlit + 通义千问 + ChromaDB
-- **安全**: 全面安全审计与加固
+- **技术栈**: React + FastAPI + 通义千问 + ChromaDB + PaddleOCR
+- **特色**: GPU加速文档解析 + 多模态知识检索 + 全面安全加固
 
 ---
 
@@ -503,8 +476,10 @@ equipment-maintenance-system/
 ## 致谢
 
 - [FastAPI](https://fastapi.tiangolo.com/) - 高性能Web框架
-- [Streamlit](https://streamlit.io/) - 数据应用框架
+- [React](https://react.dev/) - 用户界面构建库
 - [ChromaDB](https://www.trychroma.com/) - 向量数据库
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) - OCR文字识别
+- [Qwen2-VL](https://github.com/QwenLM/Qwen2-VL) - 视觉语言模型
 - [通义千问](https://tongyi.aliyun.com/) - 大语言模型
 - [中国软件杯](http://www.cnsoftbei.com/) - 竞赛平台
 

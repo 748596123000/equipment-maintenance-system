@@ -1,21 +1,21 @@
 # 设备检修知识检索与作业系统 Dockerfile
 # 适配银河麒麟高级服务器版 V10/V11 + LoongArch架构
 #
-# 注意：龙芯LoongArch架构不支持Docker Hub官方镜像
-# 请使用银河麒麟系统自带Python或龙芯云平台提供的开发环境
-#
-# 方案一：在银河麒麟系统上直接部署（推荐）
-# 方案二：使用龙芯云平台提供的LoongArch容器镜像
+# 多阶段构建：
+# 1. frontend-builder: Node.js 构建 React 前端
+# 2. builder: Python 编译依赖
+# 3. runtime: 最终运行时镜像
 
-# === 方案一：直接部署（推荐） ===
-# 在银河麒麟系统上直接运行，无需Docker
-# 请参考 deploy/kylin_setup.sh 脚本
+# ---- 阶段1: 构建前端 ----
+FROM node:20-slim AS frontend-builder
 
-# === 方案二：LoongArch容器镜像 ===
-# FROM loongarch64/python:3.10
-# 如果龙芯云平台提供适配的Python基础镜像，可取消注释使用
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
 
-# ---- 阶段1: 构建依赖 ----
+# ---- 阶段2: 构建Python依赖 ----
 FROM python:3.10-slim AS builder
 
 WORKDIR /build
@@ -31,7 +31,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt \
     || pip install --no-cache-dir --prefix=/install -r requirements.txt --use-pep517
 
-# ---- 阶段2: 运行时 ----
+# ---- 阶段3: 运行时 ----
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -43,9 +43,9 @@ ENV PYTHONUNBUFFERED=1 \
     CHROMA_DB_IMPL=duckdb+parquet \
     ANNOY_ENABLED=0
 
-# Docker基础镜像为Debian，使用apt包管理器
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    nginx \
     libmupdf-dev \
     mupdf-tools \
     libjpeg-dev \
@@ -56,15 +56,20 @@ COPY --from=builder /install /usr/local
 
 COPY . .
 
-RUN mkdir -p /app/data/pdfs /app/data/images /app/data/chroma_db /app/data/logs
+COPY --from=frontend-builder /build/frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
+RUN mkdir -p /app/data/pdfs /app/data/images /app/data/chroma_db /app/data/logs \
+    && rm -f /etc/nginx/sites-enabled/default
 
-EXPOSE 8501 8000
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app \
+    && chown -R appuser:appuser /usr/share/nginx/html
+
+EXPOSE 80 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health && curl -f http://localhost:8501/_stcore/health || exit 1
+    CMD curl -f http://localhost:8000/health && curl -f http://localhost:80/ || exit 1
 
 COPY deploy/start.sh /app/start.sh
 RUN chmod +x /app/start.sh

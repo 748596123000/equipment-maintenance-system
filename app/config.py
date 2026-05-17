@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     # ========== 文件存储配置 ==========
     UPLOAD_DIR: str = Field(
         default="./data/pdfs",
-        description="PDF文件上传目录"
+        description="文档文件上传目录"
     )
     IMAGE_DIR: str = Field(
         default="./data/images",
@@ -82,7 +82,8 @@ class Settings(BaseSettings):
         description="最大文件上传大小（字节）"
     )
     ALLOWED_EXTENSIONS: list = Field(
-        default=["pdf"],
+        default=["pdf", "docx", "xlsx", "pptx", "txt", "md", "csv", "json", "xml", "log",
+                 "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp"],
         description="允许上传的文件扩展名"
     )
 
@@ -127,12 +128,40 @@ class Settings(BaseSettings):
         default=False,
         description="调试模式开关"
     )
+
+    # ========== OCR配置 ==========
+    OCR_BACKEND: str = Field(
+        default="auto",
+        description="OCR后端: auto / paddleocr / none"
+    )
+    OCR_USE_GPU: bool = Field(
+        default=True,
+        description="OCR是否使用GPU加速"
+    )
+    OCR_LANGUAGE: str = Field(
+        default="ch",
+        description="OCR语言: ch / en / ch_en"
+    )
+
+    # ========== 视觉模型配置 ==========
+    VISION_BACKEND: str = Field(
+        default="dashscope",
+        description="视觉模型后端: dashscope / local / auto"
+    )
+    LOCAL_VISION_MODEL: str = Field(
+        default="Qwen/Qwen2-VL-2B-Instruct",
+        description="本地视觉模型名称"
+    )
+    VISION_GPU_DEVICE: str = Field(
+        default="auto",
+        description="视觉模型GPU设备: auto / cuda:0 / cpu"
+    )
     ENVIRONMENT: str = Field(
         default="development",
         description="运行环境: development / production"
     )
     CORS_ORIGINS: list = Field(
-        default=["http://localhost:8501"],
+        default=["http://localhost:8501", "http://localhost:3000"],
         description="允许跨域的来源列表"
     )
     ALLOWED_HOSTS: list = Field(

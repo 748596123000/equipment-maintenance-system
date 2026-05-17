@@ -26,3 +26,6 @@ build/
 backups/
 *.tar.gz
 install.log
+.trae/
+node_modules/
+frontend/dist/

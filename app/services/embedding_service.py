@@ -15,6 +15,8 @@ import hashlib
 import logging
 from typing import List, Optional
 
+from cachetools import LRUCache
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)

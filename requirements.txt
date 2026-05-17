@@ -23,6 +23,11 @@ duckdb==0.10.0
 pymupdf==1.24.10
 pdfplumber==0.11.4
 
+# 多格式文档解析
+python-docx==1.1.2
+openpyxl==3.1.5
+python-pptx==1.0.2
+
 # 大模型服务
 openai==1.57.0
 dashscope==1.20.14
@@ -32,7 +37,6 @@ pydantic==2.10.0
 pydantic-settings==2.6.0
 
 # 安全
-passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 
 # 工具库

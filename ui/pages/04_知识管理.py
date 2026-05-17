@@ -40,13 +40,18 @@ STATUS_MAP = {
 def render_my_uploads():
     """渲染普通用户的'我的上传'页面"""
     st.markdown("### 📤 我的上传")
-    st.markdown("上传PDF文档，管理员审批通过后将自动解析入库")
+    st.markdown("上传文档文件，管理员审批通过后将自动解析入库")
 
-    # 文件上传区域
+    SUPPORTED_TYPES = [
+        "pdf", "docx", "xlsx", "pptx",
+        "txt", "md", "csv", "json", "xml", "log",
+        "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp",
+    ]
+
     st.markdown("#### 上传文档")
     uploaded_files = st.file_uploader(
-        "选择PDF文件（支持多选）",
-        type=["pdf"],
+        "选择文档文件（支持多选）",
+        type=SUPPORTED_TYPES,
         accept_multiple_files=True,
         key="doc_uploader",
     )
@@ -67,11 +72,23 @@ def render_my_uploads():
         for uploaded_file in uploaded_files:
             with st.spinner(f"正在上传 {uploaded_file.name}..."):
                 try:
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
+                    ext = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+                    mime_map = {
+                        "pdf": "application/pdf",
+                        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "txt": "text/plain", "md": "text/markdown", "csv": "text/csv",
+                        "json": "application/json", "xml": "application/xml", "log": "text/plain",
+                        "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                        "bmp": "image/bmp", "gif": "image/gif", "tiff": "image/tiff", "webp": "image/webp",
+                    }
+                    content_type = mime_map.get(ext, "application/octet-stream")
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), content_type)}
                     data = {"category": category}
 
                     resp = requests.post(
-                        f"{get_api_base()}/upload/pdf",
+                        f"{get_api_base()}/upload/file",
                         files=files,
                         data=data,
                         headers=get_user_headers(),
@@ -95,7 +112,6 @@ def render_my_uploads():
 
     st.markdown("---")
 
-    # 我的文档列表
     st.markdown("#### 我的文档列表")
 
     try:
@@ -143,7 +159,7 @@ def render_my_uploads():
 def render_document_approval():
     """渲染管理员的'文档审批'页面"""
     st.markdown("### 📝 文档审批")
-    st.markdown("审批用户上传的PDF文档，审批通过后系统将自动解析入库")
+    st.markdown("审批用户上传的文档，审批通过后系统将自动解析入库")
 
     # 三个标签页
     tab_pending, tab_approved, tab_all = st.tabs([

@@ -1,7 +1,7 @@
 """
 数据初始化模块
 
-在系统首次启动时，自动扫描samples/目录下的PDF文件，
+在系统首次启动时，自动扫描samples/目录下的文档文件，
 将其复制到data/pdfs/并导入知识库（跳过已导入的文件）。
 通过data/.data_initialized标记文件避免重复导入。
 """
@@ -16,13 +16,18 @@ logger = logging.getLogger(__name__)
 
 INITIALIZED_FLAG = "data/.data_initialized"
 SAMPLE_DIRS = ["samples", os.path.join("data", "pdfs")]
+SUPPORTED_EXTENSIONS = {
+    "pdf", "docx", "xlsx", "pptx",
+    "txt", "md", "csv", "json", "xml", "log",
+    "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp",
+}
 
 
 def init_sample_data():
     """
     初始化示例数据
 
-    扫描samples/和data/pdfs/目录下的PDF文件，
+    扫描samples/和data/pdfs/目录下的文档文件，
     将未导入的文件自动导入知识库。
     通过data/.data_initialized标记文件避免重复导入。
     """
@@ -30,17 +35,18 @@ def init_sample_data():
         logger.info("示例数据已初始化，跳过")
         return
 
-    pdf_files = []
+    doc_files = []
     for scan_dir in SAMPLE_DIRS:
         if os.path.isdir(scan_dir):
             for f in os.listdir(scan_dir):
-                if f.lower().endswith(".pdf"):
+                ext = f.rsplit(".", 1)[-1].lower() if "." in f else ""
+                if ext in SUPPORTED_EXTENSIONS:
                     src = os.path.join(scan_dir, f)
-                    if src not in [p[0] for p in pdf_files]:
-                        pdf_files.append((src, f))
+                    if src not in [p[0] for p in doc_files]:
+                        doc_files.append((src, f))
 
-    if not pdf_files:
-        logger.info("未找到PDF文件，跳过数据初始化")
+    if not doc_files:
+        logger.info("未找到文档文件，跳过数据初始化")
         return
 
     from app.models.database import get_database
@@ -53,7 +59,7 @@ def init_sample_data():
     os.makedirs(upload_dir, exist_ok=True)
 
     imported_count = 0
-    for src_path, filename in pdf_files:
+    for src_path, filename in doc_files:
         existing = db.get_connection().execute(
             "SELECT id FROM documents WHERE filename = ?",
             (filename,),
@@ -93,14 +99,14 @@ def init_sample_data():
 
 
 def _process_document_direct(document_id: str, filename: str, file_path: str, category: str):
-    """直接处理文档：解析PDF -> 分块 -> 向量化 -> 存入向量库"""
+    """直接处理文档：解析文档 -> 分块 -> 向量化 -> 存入向量库"""
+    from app.models.database import get_database
     db = get_database()
     db.update_document(document_id, status="processing")
 
     logger.info(f"开始解析文档: {filename} (ID: {document_id})")
-    from app.core.pdf_parser import PDFParser
-    parser = PDFParser(file_path)
-    parse_result = parser.parse_pdf()
+    from app.core.document_parser import parse_document
+    parse_result = parse_document(file_path, filename)
     page_count = parse_result.get("total_pages", 0)
 
     all_paragraphs = parse_result.get("paragraphs", [])

@@ -24,10 +24,9 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.config import settings
-from passlib.context import CryptContext
+import bcrypt
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +255,7 @@ class Database:
         now = datetime.now().isoformat()
 
         admin_password = secrets.token_urlsafe(12)
-        admin_password_hash = _pwd_context.hash(admin_password)
+        admin_password_hash = bcrypt.hashpw(admin_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         cursor.execute(
             """INSERT OR IGNORE INTO users (id, username, password_hash, role, created_at, is_active, status)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -265,7 +264,7 @@ class Database:
         admin_inserted = cursor.rowcount > 0
 
         user_password = secrets.token_urlsafe(12)
-        user_password_hash = _pwd_context.hash(user_password)
+        user_password_hash = bcrypt.hashpw(user_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         cursor.execute(
             """INSERT OR IGNORE INTO users (id, username, password_hash, role, created_at, is_active, status)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",

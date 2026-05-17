@@ -1,6 +1,7 @@
 #!/bin/bash
 # ============================================================
 # 设备检修知识检索与作业系统 - 启动脚本
+# 支持：Nginx(React前端) + FastAPI(后端)
 # ============================================================
 
 # 激活虚拟环境（如果存在）
@@ -31,17 +32,37 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-# 启动Streamlit前端
-echo "启动Streamlit前端 (端口8501)..."
-streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0 2>&1 | tee data/logs/ui.log &
-UI_PID=$!
-echo $UI_PID > data/logs/ui.pid
-echo "  前端PID: $UI_PID"
+# 检测前端模式：Nginx(React) 或 Streamlit
+if command -v nginx &> /dev/null && [ -d "/usr/share/nginx/html/assets" ]; then
+    echo "启动Nginx前端 (端口80)..."
+    nginx 2>&1 | tee data/logs/ui.log &
+    UI_PID=$!
+    echo $UI_PID > data/logs/ui.pid
+    echo "  Nginx PID: $UI_PID"
+    FRONTEND_URL="http://localhost:80"
+elif [ -d "frontend/dist" ] && command -v nginx &> /dev/null; then
+    echo "检测到React前端构建产物，配置Nginx..."
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null
+    cp frontend/nginx.conf /etc/nginx/conf.d/default.conf 2>/dev/null
+    cp -r frontend/dist/* /usr/share/nginx/html/ 2>/dev/null
+    nginx 2>&1 | tee data/logs/ui.log &
+    UI_PID=$!
+    echo $UI_PID > data/logs/ui.pid
+    echo "  Nginx PID: $UI_PID"
+    FRONTEND_URL="http://localhost:80"
+else
+    echo "启动Streamlit前端 (端口8501)..."
+    streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true 2>&1 | tee data/logs/ui.log &
+    UI_PID=$!
+    echo $UI_PID > data/logs/ui.pid
+    echo "  前端PID: $UI_PID"
+    FRONTEND_URL="http://localhost:8501"
+fi
 
 echo ""
 echo "=========================================="
 echo "  系统已启动"
-echo "  前端: http://localhost:8501"
+echo "  前端: $FRONTEND_URL"
 echo "  API:  http://localhost:8000/docs"
 echo "=========================================="
 echo ""
@@ -53,6 +74,7 @@ cleanup() {
     echo "正在停止服务..."
     kill -TERM $API_PID 2>/dev/null
     kill -TERM $UI_PID 2>/dev/null
+    nginx -s stop 2>/dev/null
     # 等待最多5秒
     for i in $(seq 1 5); do
         kill -0 $API_PID 2>/dev/null || kill -0 $UI_PID 2>/dev/null || break

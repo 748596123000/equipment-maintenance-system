@@ -555,19 +555,13 @@ class PDFParser:
         return (0.0, 0.0, 0.0, 0.0)
 
     def _describe_image(self, image_bytes: bytes, image_format: str = "png") -> Optional[str]:
-        """
-        调用通义千问多模态模型生成图片描述
+        try:
+            from app.services.vision_service import get_vision_service
+            vision = get_vision_service()
+            return vision.describe_image(image_bytes, image_format)
+        except Exception as e:
+            logger.warning(f"视觉模型调用失败: {e}")
 
-        使用OpenAI兼容接口调用qwen-vl-max模型，
-        对设备检修相关图片进行详细描述。
-
-        Args:
-            image_bytes: 图片二进制数据
-            image_format: 图片格式（png/jpeg等）
-
-        Returns:
-            Optional[str]: 图片描述文本，失败返回None
-        """
         if not settings.dashscope_api_key:
             logger.warning("未配置DASHSCOPE_API_KEY，跳过图片描述生成")
             return None

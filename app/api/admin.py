@@ -48,6 +48,11 @@ class ConfigUpdateRequest(BaseModel):
     chunk_overlap: Optional[int] = Field(default=None, description="分块重叠大小")
     top_k_results: Optional[int] = Field(default=None, description="检索结果数")
     retriever_score_threshold: Optional[float] = Field(default=None, description="检索相似度阈值")
+    ocr_backend: Optional[str] = Field(default=None, description="OCR后端")
+    ocr_use_gpu: Optional[bool] = Field(default=None, description="OCR使用GPU")
+    ocr_language: Optional[str] = Field(default=None, description="OCR语言")
+    vision_backend: Optional[str] = Field(default=None, description="视觉模型后端")
+    local_vision_model: Optional[str] = Field(default=None, description="本地视觉模型")
 
 
 @router.get("/stats", summary="获取系统统计信息")
@@ -300,6 +305,11 @@ async def get_system_config():
             "api_host": settings.API_HOST,
             "api_port": settings.API_PORT,
             "debug": settings.DEBUG,
+            "ocr_backend": settings.OCR_BACKEND,
+            "ocr_use_gpu": settings.OCR_USE_GPU,
+            "ocr_language": settings.OCR_LANGUAGE,
+            "vision_backend": settings.VISION_BACKEND,
+            "local_vision_model": settings.LOCAL_VISION_MODEL,
         }
     }
 
@@ -349,6 +359,26 @@ async def update_system_config(request: ConfigUpdateRequest):
         settings.RETRIEVER_SCORE_THRESHOLD = request.retriever_score_threshold
         updated_fields["retriever_score_threshold"] = request.retriever_score_threshold
 
+    if request.ocr_backend is not None:
+        settings.OCR_BACKEND = request.ocr_backend
+        updated_fields["ocr_backend"] = request.ocr_backend
+
+    if request.ocr_use_gpu is not None:
+        settings.OCR_USE_GPU = request.ocr_use_gpu
+        updated_fields["ocr_use_gpu"] = request.ocr_use_gpu
+
+    if request.ocr_language is not None:
+        settings.OCR_LANGUAGE = request.ocr_language
+        updated_fields["ocr_language"] = request.ocr_language
+
+    if request.vision_backend is not None:
+        settings.VISION_BACKEND = request.vision_backend
+        updated_fields["vision_backend"] = request.vision_backend
+
+    if request.local_vision_model is not None:
+        settings.LOCAL_VISION_MODEL = request.local_vision_model
+        updated_fields["local_vision_model"] = request.local_vision_model
+
     if not updated_fields:
         raise HTTPException(status_code=400, detail="没有需要更新的配置项")
 
@@ -362,6 +392,11 @@ async def update_system_config(request: ConfigUpdateRequest):
         ("chunk_overlap", str(request.chunk_overlap) if request.chunk_overlap is not None else None),
         ("top_k_results", str(request.top_k_results) if request.top_k_results is not None else None),
         ("retriever_score_threshold", str(request.retriever_score_threshold) if request.retriever_score_threshold is not None else None),
+        ("ocr_backend", request.ocr_backend),
+        ("ocr_use_gpu", str(request.ocr_use_gpu) if request.ocr_use_gpu is not None else None),
+        ("ocr_language", request.ocr_language),
+        ("vision_backend", request.vision_backend),
+        ("local_vision_model", request.local_vision_model),
     ]:
         if value is not None:
             db.set_config(field, str(value))
@@ -480,4 +515,74 @@ async def health_check():
         "code": 200 if health_info["status"] == "healthy" else 503,
         "message": "系统正常" if health_info["status"] == "healthy" else "部分组件异常",
         "data": health_info,
+    }
+
+
+@router.get("/gpu-status", summary="获取GPU状态")
+async def get_gpu_status():
+    """
+    获取GPU加速相关状态信息，包括GPU设备、OCR服务、视觉模型
+
+    Returns:
+        dict: GPU状态信息
+    """
+    from app.utils.gpu_utils import get_gpu_info
+    from app.services.ocr_service import get_ocr_service
+    from app.services.vision_service import get_vision_service
+
+    gpu_info = get_gpu_info()
+
+    ocr_svc = get_ocr_service()
+    ocr_status = {
+        "backend": settings.OCR_BACKEND,
+        "use_gpu": settings.OCR_USE_GPU,
+        "language": settings.OCR_LANGUAGE,
+        "available": ocr_svc.is_available,
+        "engine_loaded": ocr_svc._initialized and ocr_svc._engine is not None,
+    }
+
+    vision_svc = get_vision_service()
+    current_vision_backend = vision_svc.backend
+    if current_vision_backend == "auto":
+        if gpu_info["available"]:
+            current_vision_backend = "local (auto)"
+        elif settings.DASHSCOPE_API_KEY:
+            current_vision_backend = "dashscope (auto)"
+        else:
+            current_vision_backend = "unavailable (auto)"
+
+    vision_status = {
+        "backend": settings.VISION_BACKEND,
+        "local_model": settings.LOCAL_VISION_MODEL,
+        "local_available": vision_svc.is_local_available if gpu_info["available"] else False,
+        "current_backend": current_vision_backend,
+    }
+
+    return {
+        "code": 200,
+        "message": "查询成功",
+        "data": {
+            "gpu": gpu_info,
+            "ocr": ocr_status,
+            "vision": vision_status,
+        },
+    }
+
+
+@router.post("/gpu-cache/clear", summary="清理GPU缓存")
+async def clear_gpu_cache_endpoint():
+    """
+    手动清理GPU显存缓存（torch + paddle）
+
+    Returns:
+        dict: 清理结果
+    """
+    from app.utils.gpu_utils import clear_gpu_cache as do_clear
+
+    do_clear()
+
+    return {
+        "code": 200,
+        "message": "GPU缓存已清理",
+        "data": {"cleared": True},
     }

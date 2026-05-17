@@ -31,9 +31,21 @@ class Settings(BaseSettings):
         default="text-embedding-v3",
         description="文本向量化模型名称"
     )
+    LLM_BACKEND: str = Field(
+        default="dashscope",
+        description="LLM后端类型: dashscope / openai_compatible / ollama"
+    )
     LLM_MODEL: str = Field(
         default="qwen-max",
         description="大语言模型名称，可选: qwen-max, qwen-plus, qwen-turbo"
+    )
+    LLM_API_BASE_URL: str = Field(
+        default="",
+        description="OpenAI兼容API基础URL，如 http://localhost:8000/v1"
+    )
+    LLM_API_KEY: str = Field(
+        default="",
+        description="OpenAI兼容API密钥，Ollama可留空"
     )
     LLM_TEMPERATURE: float = Field(
         default=0.7,

@@ -40,9 +40,12 @@ class UserCreateRequest(BaseModel):
 
 class ConfigUpdateRequest(BaseModel):
     """配置更新请求"""
+    llm_backend: Optional[str] = Field(default=None, description="LLM后端类型")
     llm_model: Optional[str] = Field(default=None, description="大模型名称")
     llm_temperature: Optional[float] = Field(default=None, description="生成温度")
     llm_max_tokens: Optional[int] = Field(default=None, description="最大输出token数")
+    llm_api_base_url: Optional[str] = Field(default=None, description="OpenAI兼容API基础URL")
+    llm_api_key: Optional[str] = Field(default=None, description="OpenAI兼容API密钥")
     embedding_model: Optional[str] = Field(default=None, description="Embedding模型名称")
     chunk_size: Optional[int] = Field(default=None, description="分块大小")
     chunk_overlap: Optional[int] = Field(default=None, description="分块重叠大小")
@@ -293,7 +296,10 @@ async def get_system_config():
         "code": 200,
         "message": "查询成功",
         "data": {
+            "llm_backend": settings.LLM_BACKEND,
             "llm_model": settings.LLM_MODEL,
+            "llm_api_base_url": settings.LLM_API_BASE_URL,
+            "llm_api_key": "******" if settings.LLM_API_KEY else "",
             "embedding_model": settings.EMBEDDING_MODEL,
             "llm_temperature": settings.LLM_TEMPERATURE,
             "llm_max_tokens": settings.LLM_MAX_TOKENS,
@@ -327,6 +333,10 @@ async def update_system_config(request: ConfigUpdateRequest):
     """
     updated_fields = {}
 
+    if request.llm_backend is not None:
+        settings.LLM_BACKEND = request.llm_backend
+        updated_fields["llm_backend"] = request.llm_backend
+
     if request.llm_model is not None:
         settings.LLM_MODEL = request.llm_model
         updated_fields["llm_model"] = request.llm_model
@@ -338,6 +348,14 @@ async def update_system_config(request: ConfigUpdateRequest):
     if request.llm_max_tokens is not None:
         settings.LLM_MAX_TOKENS = request.llm_max_tokens
         updated_fields["llm_max_tokens"] = request.llm_max_tokens
+
+    if request.llm_api_base_url is not None:
+        settings.LLM_API_BASE_URL = request.llm_api_base_url
+        updated_fields["llm_api_base_url"] = request.llm_api_base_url
+
+    if request.llm_api_key is not None and request.llm_api_key != "******":
+        settings.LLM_API_KEY = request.llm_api_key
+        updated_fields["llm_api_key"] = "******"
 
     if request.embedding_model is not None:
         settings.EMBEDDING_MODEL = request.embedding_model
@@ -384,9 +402,12 @@ async def update_system_config(request: ConfigUpdateRequest):
 
     db = get_database()
     for field, value in [
+        ("llm_backend", request.llm_backend),
         ("llm_model", request.llm_model),
         ("llm_temperature", str(request.llm_temperature) if request.llm_temperature is not None else None),
         ("llm_max_tokens", str(request.llm_max_tokens) if request.llm_max_tokens is not None else None),
+        ("llm_api_base_url", request.llm_api_base_url),
+        ("llm_api_key", request.llm_api_key if request.llm_api_key and request.llm_api_key != "******" else None),
         ("embedding_model", request.embedding_model),
         ("chunk_size", str(request.chunk_size) if request.chunk_size is not None else None),
         ("chunk_overlap", str(request.chunk_overlap) if request.chunk_overlap is not None else None),
@@ -407,6 +428,11 @@ async def update_system_config(request: ConfigUpdateRequest):
         action="更新系统配置",
         detail=f"fields={list(updated_fields.keys())}",
     )
+
+    llm_changed = any(k.startswith("llm_") for k in updated_fields)
+    if llm_changed:
+        from app.services.llm_service import reset_llm_service
+        reset_llm_service()
 
     return {
         "code": 200,
@@ -585,4 +611,90 @@ async def clear_gpu_cache_endpoint():
         "code": 200,
         "message": "GPU缓存已清理",
         "data": {"cleared": True},
+    }
+
+
+@router.get("/llm/models", summary="获取LLM可用模型列表")
+async def get_llm_models(
+    backend: Optional[str] = Query(default=None, description="LLM后端类型"),
+    base_url: Optional[str] = Query(default=None, description="API基础URL"),
+    api_key: Optional[str] = Query(default=None, description="API密钥"),
+):
+    from app.services.llm_service import LLMService
+
+    query_backend = backend or settings.LLM_BACKEND
+    models = []
+
+    if query_backend == "dashscope":
+        models = [
+            {"id": "qwen-max", "name": "Qwen Max（最强）"},
+            {"id": "qwen-plus", "name": "Qwen Plus（均衡）"},
+            {"id": "qwen-turbo", "name": "Qwen Turbo（最快）"},
+            {"id": "qwen-long", "name": "Qwen Long（长文本）"},
+        ]
+    elif query_backend == "ollama":
+        ollama_available = LLMService.check_ollama_available()
+        ollama_models = LLMService.list_ollama_models() if ollama_available else []
+        models = [{"id": m["name"], "name": m["name"]} for m in ollama_models]
+    elif query_backend == "openai_compatible":
+        url = base_url or settings.LLM_API_BASE_URL
+        key = api_key or settings.LLM_API_KEY
+        if url:
+            try:
+                import requests as req
+                headers = {"Content-Type": "application/json"}
+                if key:
+                    headers["Authorization"] = f"Bearer {key}"
+                resp = req.get(f"{url.rstrip('/')}/models", headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for m in data.get("data", []):
+                        mid = m.get("id", "")
+                        models.append({"id": mid, "name": mid})
+            except Exception as e:
+                logger.debug(f"获取OpenAI兼容模型列表失败: {e}")
+
+    return {
+        "code": 200,
+        "message": "查询成功",
+        "data": {
+            "backend": query_backend,
+            "models": models,
+        },
+    }
+
+
+@router.get("/llm/status", summary="获取LLM服务状态")
+async def get_llm_status():
+    from app.services.llm_service import LLMService, OLLAMA_DEFAULT_URL
+
+    backend = settings.LLM_BACKEND
+    status_info = {
+        "backend": backend,
+        "model": settings.LLM_MODEL,
+        "available": False,
+        "connection": "unknown",
+    }
+
+    if backend == "dashscope":
+        status_info["available"] = bool(settings.DASHSCOPE_API_KEY and settings.DASHSCOPE_API_KEY != "your_api_key_here")
+        status_info["connection"] = "ok" if status_info["available"] else "no_api_key"
+    elif backend == "ollama":
+        ollama_available = LLMService.check_ollama_available()
+        status_info["available"] = ollama_available
+        status_info["connection"] = "ok" if ollama_available else "unreachable"
+        status_info["url"] = settings.LLM_API_BASE_URL or OLLAMA_DEFAULT_URL
+    elif backend == "openai_compatible":
+        url = settings.LLM_API_BASE_URL
+        if url:
+            status_info["available"] = LLMService.check_api_available(url, settings.LLM_API_KEY)
+            status_info["connection"] = "ok" if status_info["available"] else "error"
+            status_info["url"] = url
+        else:
+            status_info["connection"] = "no_url"
+
+    return {
+        "code": 200,
+        "message": "查询成功",
+        "data": status_info,
     }

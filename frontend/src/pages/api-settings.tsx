@@ -40,10 +40,15 @@ import {
   XCircle,
   Download,
   Package,
+  Wifi,
+  WifiOff,
 } from 'lucide-react'
 
 interface SystemConfig {
+  llm_backend: string
   llm_model: string
+  llm_api_base_url: string
+  llm_api_key: string
   embedding_model: string
   llm_temperature: number
   llm_max_tokens: number
@@ -104,6 +109,12 @@ const LLM_MODELS = [
   { value: 'qwen-long', label: 'Qwen Long（长文本）' },
 ]
 
+const LLM_BACKENDS = [
+  { value: 'dashscope', label: 'DashScope API（通义千问）' },
+  { value: 'openai_compatible', label: 'OpenAI 兼容 API' },
+  { value: 'ollama', label: 'Ollama 本地模型' },
+]
+
 const EMBEDDING_MODELS = [
   { value: 'text-embedding-v3', label: 'text-embedding-v3（推荐）' },
   { value: 'text-embedding-v2', label: 'text-embedding-v2' },
@@ -161,6 +172,10 @@ export default function ApiSettingsPage() {
   const [modelsLoading, setModelsLoading] = useState(false)
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set())
 
+  const [llmModels, setLlmModels] = useState<{ id: string; name: string }[]>([])
+  const [llmModelsLoading, setLlmModelsLoading] = useState(false)
+  const [llmStatus, setLlmStatus] = useState<{ available: boolean; connection: string } | null>(null)
+
   const fetchConfig = useCallback(async () => {
     try {
       setLoading(true)
@@ -208,6 +223,32 @@ export default function ApiSettingsPage() {
       setModels([])
     } finally {
       setModelsLoading(false)
+    }
+  }, [])
+
+  const fetchLlmModels = useCallback(async (backend?: string, baseUrl?: string, apiKey?: string) => {
+    try {
+      setLlmModelsLoading(true)
+      const params = new URLSearchParams()
+      if (backend) params.set('backend', backend)
+      if (baseUrl) params.set('base_url', baseUrl)
+      if (apiKey) params.set('api_key', apiKey)
+      const qs = params.toString()
+      const res = await api.get<{ models: { id: string; name: string }[] }>(`/admin/llm/models${qs ? '?' + qs : ''}`)
+      setLlmModels(res.data.models || [])
+    } catch {
+      setLlmModels([])
+    } finally {
+      setLlmModelsLoading(false)
+    }
+  }, [])
+
+  const fetchLlmStatus = useCallback(async () => {
+    try {
+      const res = await api.get<{ available: boolean; connection: string }>('/admin/llm/status')
+      setLlmStatus(res.data)
+    } catch {
+      setLlmStatus(null)
     }
   }, [])
 
@@ -292,7 +333,8 @@ export default function ApiSettingsPage() {
     fetchConfig()
     fetchGpuStatus()
     fetchModels()
-  }, [fetchConfig, fetchGpuStatus, fetchModels])
+    fetchLlmStatus()
+  }, [fetchConfig, fetchGpuStatus, fetchModels, fetchLlmStatus])
 
   useEffect(() => {
     gpuRefreshRef.current = setInterval(fetchGpuStatus, 30000)
@@ -795,32 +837,159 @@ export default function ApiSettingsPage() {
             大语言模型配置
           </CardTitle>
           <CardDescription>
-            配置 AI 问答和作业指引生成使用的语言模型
+            配置 AI 问答和作业指引生成使用的语言模型，支持本地模型和自定义API
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="llm-model">LLM 模型</Label>
+              <Label htmlFor="llm-backend">LLM 后端</Label>
               <Select
-                value={config.llm_model}
-                onValueChange={(v) => updateField('llm_model', v)}
+                value={config.llm_backend}
+                onValueChange={(v) => {
+                  updateField('llm_backend', v)
+                  if (v === 'dashscope') {
+                    updateField('llm_model', 'qwen-max')
+                    setLlmModels(LLM_MODELS.map(m => ({ id: m.value, name: m.label })))
+                  } else {
+                    fetchLlmModels(v, config.llm_api_base_url, config.llm_api_key)
+                  }
+                }}
               >
-                <SelectTrigger id="llm-model">
+                <SelectTrigger id="llm-backend">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {LLM_MODELS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
+                  {LLM_BACKENDS.map((b) => (
+                    <SelectItem key={b.value} value={b.value}>
+                      {b.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                当前: <code className="bg-muted px-1 rounded">{config.llm_model}</code>
-              </p>
+              <div className="flex items-center gap-2">
+                {llmStatus?.available ? (
+                  <Badge variant="default" className="text-xs bg-green-500">
+                    <Wifi className="h-3 w-3 mr-1" />
+                    已连接
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-xs">
+                    <WifiOff className="h-3 w-3 mr-1" />
+                    未连接
+                  </Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-5 px-1"
+                  onClick={fetchLlmStatus}
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="llm-model">LLM 模型</Label>
+              {config.llm_backend === 'dashscope' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LLM_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : llmModels.length > 0 ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {llmModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="llm-model"
+                  value={config.llm_model}
+                  onChange={(e) => updateField('llm_model', e.target.value)}
+                  placeholder="输入模型名称"
+                />
+              )}
+              {config.llm_backend !== 'dashscope' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-5 px-1"
+                  disabled={llmModelsLoading}
+                  onClick={() => fetchLlmModels(config.llm_backend, config.llm_api_base_url, config.llm_api_key)}
+                >
+                  {llmModelsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  刷新模型列表
+                </Button>
+              )}
+            </div>
+
+            {config.llm_backend === 'openai_compatible' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="llm-api-base-url">API 基础 URL</Label>
+                  <Input
+                    id="llm-api-base-url"
+                    value={config.llm_api_base_url}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="http://localhost:8000/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    OpenAI 兼容 API 的基础地址，如 vLLM、LMStudio 等
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="llm-api-key">API 密钥</Label>
+                  <Input
+                    id="llm-api-key"
+                    type="password"
+                    value={config.llm_api_key}
+                    onChange={(e) => updateField('llm_api_key', e.target.value)}
+                    placeholder="sk-..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    部分 API 不需要密钥可留空
+                  </p>
+                </div>
+              </>
+            )}
+
+            {config.llm_backend === 'ollama' && (
+              <div className="space-y-2">
+                <Label htmlFor="ollama-url">Ollama 服务地址</Label>
+                <Input
+                  id="ollama-url"
+                  value={config.llm_api_base_url}
+                  onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                  placeholder="http://localhost:11434"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Ollama 默认地址 http://localhost:11434，支持自定义
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="embedding-model">Embedding 模型</Label>

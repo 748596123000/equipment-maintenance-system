@@ -1,7 +1,10 @@
 """
 大语言模型服务模块
 
-封装通义千问（Qwen）API调用，提供：
+封装多后端LLM调用，提供：
+- DashScope API（通义千问）
+- OpenAI兼容API（vLLM、LMStudio、DeepSeek等）
+- Ollama本地服务
 - 同步对话生成
 - 流式输出（SSE）
 - 多轮对话管理
@@ -9,7 +12,7 @@
 - JSON格式输出
 - 模型参数配置
 
-通过OpenAI兼容接口调用通义千问API。
+通过OpenAI兼容接口统一调用不同后端。
 """
 
 import json
@@ -21,15 +24,21 @@ from app.utils.helpers import extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
+DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+OLLAMA_DEFAULT_URL = "http://localhost:11434"
+
 
 class LLMService:
     """
     大语言模型服务
 
-    封装通义千问API，提供统一的对话生成接口。
-    使用OpenAI兼容的调用方式。
+    支持三种后端：
+    - dashscope: 通义千问API
+    - openai_compatible: 任意OpenAI兼容API
+    - ollama: Ollama本地服务
 
     Attributes:
+        backend: 后端类型
         api_key: API密钥
         model: 模型名称
         temperature: 生成温度
@@ -43,37 +52,44 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        backend: Optional[str] = None,
+        base_url: Optional[str] = None,
     ):
-        """
-        初始化大模型服务
-
-        Args:
-            api_key: 通义千问API密钥
-            model: 模型名称
-            temperature: 生成温度
-            max_tokens: 最大输出token数
-        """
-        self.api_key = api_key or settings.DASHSCOPE_API_KEY
+        self.backend = backend or settings.LLM_BACKEND
         self.model = model or settings.LLM_MODEL
         self.temperature = temperature or settings.LLM_TEMPERATURE
         self.max_tokens = max_tokens or settings.LLM_MAX_TOKENS
-        self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         self._client = None
 
-    def _get_client(self):
-        """
-        获取OpenAI兼容客户端（延迟初始化）
+        if base_url:
+            self.base_url = base_url
+        elif self.backend == "dashscope":
+            self.base_url = DASHSCOPE_BASE_URL
+            self.api_key = api_key or settings.DASHSCOPE_API_KEY
+        elif self.backend == "ollama":
+            self.base_url = settings.LLM_API_BASE_URL or f"{OLLAMA_DEFAULT_URL}/v1"
+            self.api_key = api_key or settings.LLM_API_KEY or "ollama"
+        elif self.backend == "openai_compatible":
+            self.base_url = settings.LLM_API_BASE_URL
+            self.api_key = api_key or settings.LLM_API_KEY
+        else:
+            self.base_url = DASHSCOPE_BASE_URL
+            self.api_key = api_key or settings.DASHSCOPE_API_KEY
 
-        Returns:
-            OpenAI: 客户端实例
-        """
+        if not hasattr(self, "api_key"):
+            self.api_key = api_key or settings.DASHSCOPE_API_KEY
+
+    def _get_client(self):
         if self._client is None:
             from openai import OpenAI
             self._client = OpenAI(
-                api_key=self.api_key,
+                api_key=self.api_key or "unused",
                 base_url=self.base_url,
             )
         return self._client
+
+    def _reset_client(self):
+        self._client = None
 
     def chat(
         self,
@@ -81,22 +97,6 @@ class LLMService:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> str:
-        """
-        同步发送对话请求并获取完整回复
-
-        注意：使用同步调用，因为Streamlit等前端框架是同步的。
-
-        Args:
-            messages: 消息列表，格式为 [{"role": "user", "content": "..."}]
-            temperature: 生成温度（可选，覆盖默认值）
-            max_tokens: 最大输出token数（可选）
-
-        Returns:
-            str: 模型生成的回复文本
-
-        Raises:
-            RuntimeError: API调用失败时抛出
-        """
         client = self._get_client()
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens or self.max_tokens
@@ -122,19 +122,6 @@ class LLMService:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
     ) -> Generator[str, None, None]:
-        """
-        流式对话生成，逐步返回生成内容
-
-        使用同步生成器，逐个yield文本片段，适用于Streamlit等同步框架。
-
-        Args:
-            messages: 消息列表
-            temperature: 生成温度
-            max_tokens: 最大输出token数
-
-        Yields:
-            str: 逐步生成的文本片段
-        """
         client = self._get_client()
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens or self.max_tokens
@@ -163,20 +150,6 @@ class LLMService:
         chat_history: Optional[List[Dict[str, str]]] = None,
         temperature: Optional[float] = None,
     ) -> str:
-        """
-        带系统提示词的对话
-
-        自动构建包含系统提示词、对话历史和用户消息的完整消息列表。
-
-        Args:
-            system_prompt: 系统提示词
-            user_message: 用户消息
-            chat_history: 对话历史（可选）
-            temperature: 生成温度
-
-        Returns:
-            str: 模型回复
-        """
         messages = [{"role": "system", "content": system_prompt}]
 
         if chat_history:
@@ -191,23 +164,6 @@ class LLMService:
         messages: List[Dict[str, str]],
         temperature: float = 0.3,
     ) -> Dict[str, Any]:
-        """
-        生成JSON格式输出
-
-        通过在Prompt中指定JSON格式要求，并解析模型返回的JSON内容。
-        支持解析 ```json``` 代码块格式。
-
-        Args:
-            messages: 消息列表
-            temperature: 生成温度（建议较低值以保证格式正确）
-
-        Returns:
-            dict: 解析后的JSON对象
-
-        Raises:
-            ValueError: JSON解析失败时抛出
-        """
-        # 添加JSON输出指令
         json_instruction = "\n\n请严格按照JSON格式输出，不要添加任何其他文字说明。"
         messages[-1]["content"] += json_instruction
 
@@ -221,27 +177,73 @@ class LLMService:
             raise ValueError(f"模型返回的JSON格式无效: {e}")
 
     def is_available(self) -> bool:
-        """
-        检查服务是否可用
+        if self.backend == "ollama":
+            return True
+        elif self.backend == "openai_compatible":
+            return bool(self.base_url)
+        else:
+            return bool(self.api_key and self.api_key != "your_api_key_here")
 
-        Returns:
-            bool: API密钥是否已配置且不为默认占位值
-        """
-        return bool(self.api_key and self.api_key != "your_api_key_here")
+    @staticmethod
+    def list_ollama_models() -> List[Dict[str, str]]:
+        try:
+            import requests
+            ollama_url = settings.LLM_API_BASE_URL or OLLAMA_DEFAULT_URL
+            api_url = ollama_url.rstrip("/")
+            if api_url.endswith("/v1"):
+                api_url = api_url[:-3]
+            resp = requests.get(f"{api_url}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = []
+                for m in data.get("models", []):
+                    models.append({
+                        "name": m.get("name", ""),
+                        "size": f"{m.get('size', 0) / (1024**9):.1f}GB" if m.get("size") else "",
+                        "modified_at": m.get("modified_at", ""),
+                    })
+                return models
+        except Exception as e:
+            logger.debug(f"Ollama模型列表获取失败: {e}")
+        return []
+
+    @staticmethod
+    def check_ollama_available() -> bool:
+        try:
+            import requests
+            ollama_url = settings.LLM_API_BASE_URL or OLLAMA_DEFAULT_URL
+            api_url = ollama_url.rstrip("/")
+            if api_url.endswith("/v1"):
+                api_url = api_url[:-3]
+            resp = requests.get(f"{api_url}/api/tags", timeout=3)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    @staticmethod
+    def check_api_available(base_url: str, api_key: str = "") -> bool:
+        try:
+            import requests
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            url = base_url.rstrip("/") + "/models"
+            resp = requests.get(url, headers=headers, timeout=5)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
 
-# 全局LLM服务单例
 _llm_service_instance: Optional[LLMService] = None
 
 
 def get_llm_service() -> LLMService:
-    """
-    获取全局LLM服务单例
-
-    Returns:
-        LLMService: 全局LLM服务实例
-    """
     global _llm_service_instance
     if _llm_service_instance is None:
         _llm_service_instance = LLMService()
     return _llm_service_instance
+
+
+def reset_llm_service():
+    global _llm_service_instance
+    _llm_service_instance = None

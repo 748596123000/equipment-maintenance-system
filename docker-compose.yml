@@ -1,0 +1,59 @@
+# 设备检修知识检索与作业系统 Docker编排文件
+# 标准x86_64部署方案
+#
+# LoongArch部署请使用:
+#   docker-compose -f docker-compose.loongarch.yml up -d
+# 或直接部署方案:
+#   bash deploy/kylin_setup.sh
+
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: equipment-maintenance-system
+    ports:
+      - "80:80"
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - LLM_BACKEND=${LLM_BACKEND:-dashscope}
+      - LLM_MODEL=${LLM_MODEL:-qwen-max}
+      - LLM_API_BASE_URL=${LLM_API_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-your_api_key_here}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v3}
+      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - SQLITE_DB_PATH=/app/data/app.db
+      - UPLOAD_DIR=/app/data/pdfs
+      - IMAGE_DIR=/app/data/images
+      - ANNOY_ENABLED=0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -f http://localhost:8000/health && curl -f http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+
+networks:
+  default:
+    driver: bridge

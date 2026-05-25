@@ -1,0 +1,16 @@
+# GPU加速依赖（需CUDA环境）
+# 安装方式: pip install -r requirements-gpu.txt
+#
+# 前置条件:
+# - NVIDIA GPU + CUDA Toolkit 11.8+ / 12.x
+# - NVIDIA Driver >= 525.60.13
+
+# PaddleOCR + PaddlePaddle GPU
+paddlepaddle-gpu>=2.6.0
+paddleocr>=2.8.0
+
+# 本地视觉模型（Qwen2-VL）
+torch>=2.1.0
+transformers>=4.40.0
+qwen-vl-utils>=0.0.1
+accelerate>=0.27.0

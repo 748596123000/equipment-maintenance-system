@@ -1,0 +1,10 @@
+{
+  "requests": [
+    {
+      "prompt": "Wide establishing shot of a high-tech industrial control room. A large holographic dashboard materializes with glowing blue interface elements. A futuristic AI assistant avatar (stylized robotic face with blue-cyan LED glowing eyes) appears at center. Title text emerges: 'Equipment Maintenance Knowledge System'. Cinematic lighting with blue neon glow. Cyberpunk technology style, 8k resolution. same subject as reference image, stable appearance, preserve features, consistent character design, consistent lighting style",
+      "input_files": ["D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\subject_reference.png"],
+      "aspect_ratio": "16:9",
+      "resolution": "2K"
+    }
+  ]
+}

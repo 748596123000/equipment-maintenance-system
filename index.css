@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  /* Apple Blue - Primary color for professional industrial feel */
+  --color-primary: #0071e3;
+  --color-primary-hover: #0077ed;
+  --color-primary-foreground: #ffffff;
+  
+  /* Secondary colors - neutral grays */
+  --color-secondary: #f5f5f7;
+  --color-secondary-foreground: #1d1d1f;
+  
+  /* Accent */
+  --color-accent: #f5f5f7;
+  --color-accent-foreground: #1d1d1f;
+  
+  /* Destructive */
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  
+  /* Muted */
+  --color-muted: #f5f5f7;
+  --color-muted-foreground: #86868b;
+  
+  /* Border */
+  --color-border: #d2d2d7;
+  --color-ring: #0071e3;
+  
+  /* Background */
+  --color-background: #ffffff;
+  --color-foreground: #1d1d1f;
+  
+  /* Card */
+  --color-card: #ffffff;
+  --color-card-foreground: #1d1d1f;
+  
+  /* Popover */
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1d1d1f;
+  
+  /* Sidebar - Light theme */
+  --color-sidebar: #f5f5f7;
+  --color-sidebar-foreground: #1d1d1f;
+  --color-sidebar-accent: #e8e8ed;
+  --color-sidebar-accent-foreground: #1d1d1f;
+  
+  /* Radius */
+  --radius: 0.5rem;
+  --font-size-base: 16px;
+}
+
+:root {
+  font-size: var(--font-size-base);
+}
+
+/* Font size variations */
+[data-font-size="small"] {
+  font-size: 14px;
+}
+
+[data-font-size="medium"] {
+  font-size: 16px;
+}
+
+[data-font-size="large"] {
+  font-size: 18px;
+}
+
+html {
+  transition: font-size 0.2s ease;
+}
+
+/* Dark theme overrides */
+.dark {
+  --color-primary: #0a84ff;
+  --color-primary-hover: #409cff;
+  --color-secondary: #1c1c1e;
+  --color-secondary-foreground: #f5f5f7;
+  --color-accent: #1c1c1e;
+  --color-accent-foreground: #f5f5f7;
+  --color-muted: #1c1c1e;
+  --color-muted-foreground: #98989d;
+  --color-border: #38383a;
+  --color-background: #000000;
+  --color-foreground: #f5f5f7;
+  --color-card: #1c1c1e;
+  --color-card-foreground: #f5f5f7;
+  --color-popover: #2c2c2e;
+  --color-popover-foreground: #f5f5f7;
+  --color-sidebar: #1c1c1e;
+  --color-sidebar-foreground: #f5f5f7;
+  --color-sidebar-accent: #2c2c2e;
+  --color-sidebar-accent-foreground: #f5f5f7;
+}
+
+/* No gold colors allowed - Apple blue only */

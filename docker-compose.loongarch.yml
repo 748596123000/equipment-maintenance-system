@@ -1,0 +1,60 @@
+# 设备检修知识检索与作业系统 - LoongArch Docker编排文件
+# 适配：银河麒麟高级服务器版 V10/V11 + LoongArch64架构
+#
+# 使用说明：
+# 1. 确保已安装 kylin-docker-ce 或 loongnix-docker
+# 2. 镜像需从龙芯云平台 https://hub.loongnix.cn 获取
+# 3. 推荐使用 deploy/kylin_setup.sh 直接部署方案（非Docker）
+
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.loongarch
+    container_name: equipment-maintenance-system
+    ports:
+      - "80:80"
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - LLM_BACKEND=${LLM_BACKEND:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5:7b}
+      - LLM_API_BASE_URL=${LLM_API_BASE_URL:-http://host.docker.internal:11434/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-ollama}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v3}
+      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - SQLITE_DB_PATH=/app/data/app.db
+      - UPLOAD_DIR=/app/data/pdfs
+      - IMAGE_DIR=/app/data/images
+      - ANNOY_ENABLED=0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -f http://localhost:8000/health && curl -f http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  default:
+    driver: bridge

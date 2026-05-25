@@ -1,0 +1,13 @@
+{
+  "requests": [
+    {
+      "prompt": "POV camera zooms in for a bold statistical summary shot. Bold glowing numbers rise on screen: '30 percent plus Efficiency Increase', '50 percent plus Error Reduction', '100 percent plus Knowledge Reuse'. Each number animates with pulsing glow rings. A circular progress chart fills with blue-to-cyan gradient. Futuristic AI assistant avatar with glowing blue-cyan LED eyes stands proud at corner. Cyberpunk technology style, 8k resolution. same subject as reference image, stable appearance, preserve features, consistent character design, consistent lighting style",
+      "input_files": [
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\subject_reference.png",
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\frames\\frame_10.png"
+      ],
+      "aspect_ratio": "16:9",
+      "resolution": "2K"
+    }
+  ]
+}

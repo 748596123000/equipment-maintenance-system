@@ -1,0 +1,422 @@
+version: 1
+plan:
+  name: '前端全面优化升级 - 视觉+安全+性能+适配'
+  max_concurrency: 4
+  max_consecutive_failures: 2
+  max_cycles: 3
+  auto_reject_retries: 1
+
+tasks:
+  - id: visual-upgrade
+    title: '视觉升级：3D透视+粒子动画+赛博朋克质感'
+    prompt: |
+      ## 任务背景
+      第15届软件杯大赛前端项目，worktree路径：D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend
+      
+      现有CSS基础已包含cyberpunk暗色/亮色主题、3D卡片、glassmorphism，但需要大幅提升视觉冲击感。
+      
+      ## 你的任务：全面升级视觉体验
+      
+      ### 1. 全局CSS增强 (src/index.css)
+      在现有CSS基础上新增以下内容（不得删除现有正确代码）：
+      
+      a) 粒子/网格动画效果
+         - 添加CSS-only粒子背景动画（用box-shadow模拟星点，多层叠加）
+         - 动态扫描线效果（水平扫描线缓慢下移）
+         - 电路板网格图案（SVG data URI背景）
+         - 添加@keyframes scanline、@keyframes particleDrift动画
+
+      b) 透视深度系统
+         - 添加perspective容器类 .perspective-container (perspective: 1200px)
+         - 添加3D卡片跟随鼠标效果 .card-3d-tracked（JS class实现）
+         - 添加视差层 .parallax-layer-[1-3]（不同滚动速度）
+         - 在cyber-card hover时添加更强的3D倾斜效果（rotateX/Y ±5deg）
+      
+      c) 全息/科幻质感
+         - 添加.holographic类：彩虹渐变动画背景
+         - 添加.scanline-overlay：扫描线覆盖层
+         - 添加.cyber-border-animated：流动边框效果（渐变色沿边框移动）
+         - 添加霓虹发光文字.neon-text（text-shadow多层叠加）
+      
+      d) 页面入场动画增强
+         - 在.animate-fade-in-up基础上添加.animate-fade-in-scale（缩放入场）
+         - 添加页面切换过渡.page-transition（opacity+transform）
+         - 添加打字机效果.typewriter（CSS animation）
+      
+      e) 暗色增强效果
+         - 在[data-theme="dark"]下添加ambient-light脉动效果
+         - 添加焦散光斑.caustic-light（CSS伪元素动画）
+         - 增强body::before网格线动效（呼吸感）
+
+      ### 2. 全局组件增强 (src/components/layout/app-layout.tsx)
+      - 添加全屏粒子背景层（纯CSS实现，不依赖JS）
+      - 添加扫描线覆盖层
+      - 添加环境光效果层
+
+      ### 3. 关键页面视觉增强
+      在以下文件中添加对应视觉增强效果：
+      - src/pages/login.tsx: 添加更多几何装饰、3D表单卡片效果、背景粒子
+      - src/pages/dashboard.tsx: 添加视差滚动卡片、数据可视化3D效果、动画数字计数
+      - src/components/chat/chat-panel.tsx: 添加消息气泡霓虹发光、AI回复打字机效果
+
+      ### 4. 性能注意事项
+      - 所有动画必须是GPU加速的（transform/opacity），不得造成重排
+      - 粒子数量控制在合理范围（CSS box-shadow最多50个）
+      - 添加@media (prefers-reduced-motion: reduce)禁用所有动画
+
+      ### 5. 交付物
+      修改以下文件：
+      - src/index.css（主要CSS增强）
+      - src/components/layout/app-layout.tsx（背景效果层）
+      - src/pages/login.tsx（登录页视觉增强）
+      - src/pages/dashboard.tsx（仪表盘视觉增强）
+      - src/components/chat/chat-panel.tsx（聊天面板增强）
+      
+      完成后输出：修改了哪些文件，添加了哪些CSS类/动画，具体视觉效果说明。
+
+    assigned_to: general
+    verified_by: verifier
+    verify_prompt: |
+      验证视觉升级是否成功实现。重点检查：
+      1. src/index.css 中是否包含新增的粒子动画、透视深度、全息效果类
+      2. 验证CSS动画使用GPU加速（transform/opacity）
+      3. 检查prefers-reduced-motion兼容性
+      4. 检查是否引入了任何破坏现有功能的样式冲突
+      报告通过/不通过及具体问题。
+    timeout_ms: 1800000
+
+  - id: security-hardening
+    title: '安全加固：XSS防护+输入验证+CSRF'
+    prompt: |
+      ## 任务背景
+      第15届软件杯大赛前端项目，worktree路径：D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend
+      
+      现有安全机制不完善，存在XSS风险。
+
+      ## 你的任务：全面安全加固
+
+      ### 1. XSS防护（最优先）
+      a) 安装DOMPurify：
+         cd "D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend"
+         npm install dompurify --save
+         npm install --save-dev @types/dompurify
+
+      b) 在src/lib/目录下创建sanitize.ts：
+         - 导出sanitizeHTML函数：使用DOMPurify清理HTML
+         - 导出sanitizeText函数：转义纯文本防止XSS
+         - 配置DOMPurify：禁止script、data:协议、javascript:协议
+
+      c) 修改src/components/chat/message-bubble.tsx：
+         - 导入sanitizeHTML
+         - 将dangerouslySetInnerHTML改为安全渲染：
+           如果content是AI回复（role=assistant），用sanitizeHTML处理
+           如果是代码块，用highlight.js或简单转义处理
+         - 确保用户消息不经过dangerouslySetInnerHTML
+
+      d) 全局搜索所有dangerouslySetInnerHTML使用点：
+         - grep "dangerouslySetInnerHTML" 全部替换为安全版本
+
+      ### 2. 输入验证增强
+      a) 在src/lib/目录下创建validate.ts：
+         - sanitizeSearchInput: 清理搜索关键词（去除HTML标签）
+         - validateFileName: 验证文件名（防路径遍历字符）
+         - validateCategory: 验证分类字段
+         - maxLength: 通用最大长度检查
+
+      b) 在以下文件中应用输入验证：
+         - src/pages/guide.tsx: keyword搜索输入使用sanitizeSearchInput
+         - src/pages/search.tsx: 搜索输入使用sanitizeSearchInput
+         - src/components/document/file-uploader.tsx: 文件名使用validateFileName
+         - src/pages/guide-generate.tsx: 分类选择使用validateCategory
+
+      ### 3. CSRF保护（API层）
+      a) 修改src/lib/api.ts：
+         - 在请求拦截器中添加X-CSRF-Token header（从meta标签读取）
+         - 添加CSRF token获取函数
+
+      b) 修改src/App.tsx或index.html：
+         - 在index.html的<head>中添加CSRF token meta标签（从Cookie读取）
+         - 添加：<meta name="csrf-token" content="{{csrf_token}}">
+
+      ### 4. 安全头部（如果使用Vite配置）
+      修改vite.config.ts添加安全响应头（如果可行）：
+      - Content-Security-Policy
+      - X-Frame-Options: DENY
+      - X-Content-Type-Options: nosniff
+      - Strict-Transport-Security
+
+      ### 5. 依赖安全检查
+      运行：npm audit --audit-level=moderate
+      - 如果有高危漏洞，升级相关包
+      - 报告漏洞情况
+
+      ### 6. 交付物
+      修改文件列表：
+      - src/lib/sanitize.ts（新建）
+      - src/lib/validate.ts（新建）
+      - src/components/chat/message-bubble.tsx（XSS修复）
+      - src/pages/guide.tsx（输入验证）
+      - src/pages/search.tsx（输入验证）
+      - src/components/document/file-uploader.tsx（输入验证）
+      - src/lib/api.ts（CSRF header）
+      - package.json（DOMPurify依赖）
+      
+      完成后输出：修改了哪些文件，安全改进内容，npm audit结果。
+
+    assigned_to: general
+    verified_by: verifier
+    verify_prompt: |
+      安全验证。重点检查：
+      1. 所有dangerouslySetInnerHTML是否已改为安全渲染
+      2. DOMPurify是否正确配置（禁止script/data:协议）
+      3. 输入验证是否在所有入口点应用
+      4. CSRF header是否正确添加
+      5. npm audit结果
+      6. 无新增安全漏洞
+      报告通过/不通过及具体问题。
+    timeout_ms: 1800000
+
+  - id: performance-optimize
+    title: '性能优化：路由级代码分割+图片优化'
+    prompt: |
+      ## 任务背景
+      第15届软件杯大赛前端项目，worktree路径：D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend
+      
+      现有50个TSX页面全同步加载，需要按需加载。
+
+      ## 你的任务：全面性能优化
+
+      ### 1. 路由级代码分割 (src/App.tsx)
+      将所有页面路由改为React.lazy + Suspense，按需加载：
+
+      import { lazy } from 'react'
+      const LoginPage = lazy(() => import('./pages/login'))
+      const DashboardPage = lazy(() => import('./pages/dashboard'))
+      ...其他所有页面
+
+      - 保持现有路由结构不变
+      - 添加Suspense fallback（带cyberpunk loading动画的组件）
+      - 确保无路由冲突
+
+      ### 2. 组件级懒加载
+      对以下重型组件使用lazy加载：
+      - src/components/document/pdf-viewer.tsx（PDF查看器）
+      - src/components/chat/chat-panel.tsx（聊天面板）
+      - src/pages/knowledge-graph.tsx（知识图谱）
+
+      ### 3. 图片优化
+      检查src/目录下所有图片资源：
+      - 检查是否有大尺寸图片（>500KB）需要压缩或优化
+      - 如果有public/目录图片，在vite.config.ts中配置图片压缩：
+        import vitePluginImageOptimizer from 'vite-plugin-imagemin' 或类似插件
+
+      ### 4. Vite构建优化
+      修改vite.config.ts：
+      - 添加build.rollupOptions.output.manualChunks：
+        vendor: ['react', 'react-dom', 'react-router-dom']
+        charts: ['recharts']
+        ui: ['@radix-ui/react-*']
+      - 配置build.cssCodeSplit: true
+      - 配置build.chunkSizeWarningLimit: 500
+
+      ### 5. 依赖检查
+      运行构建测试：
+      cd "D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend"
+      npm run build 2>&1 | Select-String "error|warning|chunk" -Context 0,2
+
+      - 修复任何构建错误
+      - 检查bundle大小是否合理
+
+      ### 6. 运行时性能
+      - 检查是否有不必要的重渲染（useMemo/useCallback优化）
+      - 检查chat-store和auth-store是否有性能问题
+
+      ### 7. 交付物
+      修改文件：
+      - src/App.tsx（路由懒加载）
+      - vite.config.ts（构建优化）
+      - src/pages/目录下所有页面文件（检查优化点）
+      
+      完成后输出：修改了哪些文件，构建大小对比，bundle分析结果。
+
+    assigned_to: general
+    verified_by: verifier
+    verify_prompt: |
+      性能验证。重点检查：
+      1. App.tsx中路由是否正确使用React.lazy
+      2. 构建是否成功（npm run build）
+      3. bundle大小是否合理（单个chunk不应超过500KB）
+      4. 代码分割是否生效（vendor、charts、ui等独立chunk）
+      5. 无运行时错误
+      报告通过/不通过及具体问题。
+    timeout_ms: 1800000
+
+  - id: ui-polish
+    title: '界面打磨：响应式+无障碍+亮色主题'
+    prompt: |
+      ## 任务背景
+      第15届软件杯大赛前端项目，worktree路径：D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend
+      
+      现有响应式和亮色主题需要完善，无障碍支持不足。
+
+      ## 你的任务：界面全面打磨
+
+      ### 1. 亮色主题质量提升
+      在src/index.css的[data-theme="light"]中增强：
+      
+      a) 阴影系统增强：
+         - 卡片hover时阴影更明显（模拟浮起效果）
+         - 添加微妙的蓝色/紫色色调到阴影中
+         - 确保输入框focus时阴影与主题色协调
+
+      b) 边框和分隔线：
+         - 亮色主题的border颜色更深更明显（与背景对比度提升）
+         - 添加subtle渐变分隔线
+
+      c) 亮色主题专用组件：
+         - 添加.light-card类（适合亮色背景）
+         - 添加.light-glass类（亮色玻璃态）
+         - 确保badge、tag在亮色下对比度足够
+
+      d) 背景层次感：
+         - 亮色主题页面背景添加微妙的渐变或纹理
+         - 确保页面内容区和侧边栏有明确的视觉层次
+
+      ### 2. 响应式细节打磨
+      检查并优化以下断点（768px和480px已存在）：
+      
+      a) 平板适配（768px）：
+         - 仪表盘统计卡片：2列→1列或保持2列但缩小间距
+         - 侧边栏：考虑折叠模式
+         - 聊天面板：全屏体验
+         - 表格：水平滚动处理
+
+      b) 手机适配（480px）：
+         - 所有按钮最小触控区域44px
+         - 搜索框全宽
+         - 模态框全屏体验
+         - 底部固定操作栏（如果需要）
+
+      c) 大屏优化（>1440px）：
+         - 最大内容宽度限制（1400px居中）
+         - 侧边栏固定宽度不随屏幕放大
+
+      ### 3. 无障碍增强（Accessibility）
+      
+      a) ARIA标签全面审查：
+         - 所有图标按钮添加aria-label
+         - 模态框添加role="dialog"和aria-modal
+         - 表单错误消息关联到对应input（aria-describedby）
+         - 加载状态添加aria-live="polite"
+
+      b) 键盘导航：
+         - Tab顺序是否合理
+         - ESC关闭模态框
+         - 焦点管理（打开弹窗时锁定焦点，关闭时返回）
+
+      c) 色彩对比度：
+         - 确保文字与背景对比度≥4.5:1（小字）/3:1（大字）
+         - 检查[data-theme="light"]下所有文字颜色
+         - 检查[data-theme="dark"]下所有文字颜色
+
+      d) 无障碍组件改进：
+         - src/components/ui/dialog.tsx：添加完整ARIA属性
+         - src/components/ui/button.tsx：确保disabled状态有视觉提示
+         - src/components/ui/input.tsx：添加error状态aria支持
+
+      ### 4. 微交互打磨
+      - 添加按钮点击涟漪效果（ripple）
+      - 添加输入框聚焦时的边框动画
+      - 添加卡片展开/折叠的平滑过渡
+      - 添加页面切换的滑动/淡入效果
+      - 添加加载状态的cyberpunk风格spinner
+
+      ### 5. 交付物
+      修改文件：
+      - src/index.css（主题增强）
+      - src/components/ui/dialog.tsx（无障碍）
+      - src/components/ui/button.tsx（微交互）
+      - src/components/ui/input.tsx（无障碍）
+      - src/components/layout/sidebar.tsx（响应式）
+      - src/pages/目录下需要响应式优化的页面
+      
+      完成后输出：修改了哪些文件，亮色主题改善情况，无障碍改进，响应式改进。
+
+    assigned_to: general
+    verified_by: verifier
+    verify_prompt: |
+      打磨验证。重点检查：
+      1. 亮色主题下所有组件对比度是否达标（≥4.5:1）
+      2. 响应式各断点（480px/768px/1440px）是否正常
+      3. ARIA标签是否完整（图标按钮、模态框、表单）
+      4. 键盘导航是否可用（Tab、ESC）
+      5. 微交互是否流畅
+      报告通过/不通过及具体问题。
+    timeout_ms: 1800000
+
+  - id: integration-qa
+    title: '集成验证与最终截图确认'
+    prompt: |
+      ## 任务背景
+      等待4个track全部完成后的最终集成验证。
+      worktree路径：D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend
+
+      ## 前置条件
+      必须等以下4个任务全部完成后再执行：
+      - visual-upgrade
+      - security-hardening  
+      - performance-optimize
+      - ui-polish
+
+      ## 你的任务
+
+      ### 1. 构建验证
+      cd "D:\Chinese team\equipment-maintenance-system-v2-fixed\.worktrees\feature-redesign\frontend"
+      npm run build
+      
+      - 确保无构建错误
+      - 检查bundle大小
+
+      ### 2. 类型检查
+      npx tsc --noEmit
+      - 修复所有TypeScript错误
+
+      ### 3. 样式一致性检查
+      审查以下关键文件的样式是否协调：
+      - login.tsx、dashboard.tsx、guide.tsx的视觉风格是否统一
+      - 暗色/亮色切换是否正常
+      - 新增CSS类是否与其他组件风格一致
+
+      ### 4. 最终截图（如果有条件）
+      如果可以运行dev server，截取以下页面：
+      - 登录页（暗色/亮色）
+      - 仪表盘（暗色/亮色）
+      - 引导生成页（暗色/亮色）
+
+      ### 5. 完整性检查清单
+      对照以下维度确认所有目标达成：
+      - [ ] 视觉冲击感：3D效果、粒子动画、全息质感
+      - [ ] 安全性：XSS防护、输入验证、CSRF保护
+      - [ ] 性能：代码分割、懒加载、构建优化
+      - [ ] 兼容性：响应式、无障碍、跨浏览器
+      - [ ] 亮色主题质量
+
+      ### 6. 交付物
+      输出完整的优化报告：
+      - 各维度改进总结
+      - 构建结果
+      - 最终截图（如有）
+      - 完整检查清单通过情况
+
+    assigned_to: general
+    verified_by: verifier
+    depends_on: [visual-upgrade, security-hardening, performance-optimize, ui-polish]
+    verify_prompt: |
+      集成验证。重点检查：
+      1. npm run build成功无错误
+      2. tsc --noEmit无严重类型错误
+      3. 4个track的所有改进都已生效
+      4. 无样式冲突或视觉回归
+      5. 优化目标全部达成
+      报告最终通过/不通过及总体评价。
+    timeout_ms: 1800000

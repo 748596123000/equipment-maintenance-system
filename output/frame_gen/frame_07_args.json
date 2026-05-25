@@ -1,0 +1,13 @@
+{
+  "requests": [
+    {
+      "prompt": "Wide shot of knowledge accumulation and document upload interface. A file upload panel glows with cascading document icons. An admin review panel on the right shows pending documents with status badges. Knowledge graph visualization in the background displays interconnected nodes with glowing blue edges. Futuristic AI assistant avatar with glowing blue-cyan LED eyes at corner. Cyberpunk technology style, 8k resolution. same subject as reference image, stable appearance, preserve features, consistent character design, consistent lighting style",
+      "input_files": [
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\subject_reference.png",
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\frames\\frame_06.png"
+      ],
+      "aspect_ratio": "16:9",
+      "resolution": "2K"
+    }
+  ]
+}

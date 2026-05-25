@@ -1,0 +1,1 @@
+{"code": "async (page) => { await page.goto('http://localhost:3000/login'); await page.waitForLoadState('networkidle'); return 'Navigated to login page'; }"}

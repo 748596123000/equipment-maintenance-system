@@ -1,0 +1,39 @@
+{
+  "requests": [
+    {
+      "prompt": "High-tech industrial control room with glowing blue holographic dashboard. Cinematic slow zoom in. Subtle camera drift. Neon blue ambient lighting. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_01.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Close-up holographic login interface with blue glowing elements and data streams. Subtle zoom in. Neon cyberpunk atmosphere. Technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_02.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Main dashboard with multiple holographic panels and glowing sensor readings. Cinematic glide shot. Blue cyan neon atmosphere. Cyberpunk technology",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_03.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Split-screen multimodal knowledge retrieval interface with text and image search. Glowing search icons animate. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_04.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "AI Q and A interface with glowing answer bubbles rising and source citations glowing cyan. Processing animation pulse. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_05.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    }
+  ]
+}

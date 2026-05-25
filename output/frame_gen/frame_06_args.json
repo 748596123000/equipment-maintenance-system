@@ -1,0 +1,13 @@
+{
+  "requests": [
+    {
+      "prompt": "Cinematic shot of standardized work instruction interface. A newly generated instruction document materializes like a holographic blueprint — step-by-step checklist cards stack vertically with safety level indicators glowing red/amber/green. Export button pulses. Futuristic AI assistant avatar with glowing blue-cyan LED eyes gestures to highlight a key safety step. Cyberpunk technology style, 8k resolution. same subject as reference image, stable appearance, preserve features, consistent character design, consistent lighting style",
+      "input_files": [
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\subject_reference.png",
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\frames\\frame_05.png"
+      ],
+      "aspect_ratio": "16:9",
+      "resolution": "2K"
+    }
+  ]
+}

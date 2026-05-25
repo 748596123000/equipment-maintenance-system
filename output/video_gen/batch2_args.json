@@ -1,0 +1,39 @@
+{
+  "requests": [
+    {
+      "prompt": "Holographic blueprint of work instruction document materializes with glowing safety indicators. Subtle camera orbit. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_06.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Document upload interface with glowing file icons and knowledge graph visualization. Glowing blue interconnected nodes. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_07.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Real-time notification system with cards flying in, bell pulsing, sound wave rings. Green checkmark badge glow. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_08.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Holographic layered system architecture diagram with data particles flowing between tiers. Glowing server icons. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_09.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Smartphone wireframe showing mobile responsive interface with touch gestures. Smooth responsive layout animation. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_10.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    }
+  ]
+}

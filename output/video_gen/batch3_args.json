@@ -1,0 +1,18 @@
+{
+  "requests": [
+    {
+      "prompt": "Bold statistical summary with glowing numbers rising and circular progress chart filling with blue cyan gradient. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_11.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    },
+    {
+      "prompt": "Futuristic industrial workshop finale with holographic AI assistants and AR overlays. Blue neon light slowly dims. Cinematic ending. Cyberpunk technology style",
+      "input_image": {"file": "D:/Chinese team/equipment-maintenance-system-v2-fixed/.worktrees/feature-redesign/output/frames/frame_12.png"},
+      "reference_type": "first_frame",
+      "duration": 6,
+      "resolution": "768P"
+    }
+  ]
+}

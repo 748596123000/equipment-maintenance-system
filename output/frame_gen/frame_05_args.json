@@ -1,0 +1,13 @@
+{
+  "requests": [
+    {
+      "prompt": "POV-style camera moves closer to AI intelligent Q&A interface. A user types: 'Motor overheating fault diagnosis' and presses Enter. The AI assistant avatar's blue-cyan LED eyes pulse brighter (processing). Answer bubbles rise from the bottom with smooth animations. Source citation cards glow in cyan, showing traceability. Cyberpunk technology style, 8k resolution. same subject as reference image, stable appearance, preserve features, consistent character design, consistent lighting style",
+      "input_files": [
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\subject_reference.png",
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\frames\\frame_04.png"
+      ],
+      "aspect_ratio": "16:9",
+      "resolution": "2K"
+    }
+  ]
+}

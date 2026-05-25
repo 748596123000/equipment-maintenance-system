@@ -1,0 +1,89 @@
+# 设备检修知识检索与作业系统 GPU版 Dockerfile
+# 基于NVIDIA CUDA镜像，支持GPU加速OCR和视觉模型推理
+#
+# 构建命令: docker build -f Dockerfile.gpu -t equipment-maintenance-system:gpu .
+# 运行命令: docker compose -f docker-compose.gpu.yml up
+
+# ---- 阶段1: 构建前端 ----
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+# ---- 阶段2: 构建Python依赖（GPU） ----
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    python3.10-dev \
+    build-essential \
+    libmupdf-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
+
+WORKDIR /build
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt \
+    || pip install --no-cache-dir --prefix=/install -r requirements.txt --use-pep517
+
+COPY requirements-gpu.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements-gpu.txt \
+    || pip install --no-cache-dir --prefix=/install -r requirements-gpu.txt --use-pep517
+
+# ---- 阶段3: 运行时（GPU） ----
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    curl \
+    nginx \
+    libmupdf-dev \
+    mupdf-tools \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    ANNOY_ENABLED=0 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+COPY --from=builder /install /usr/local
+
+COPY . .
+
+COPY --from=frontend-builder /build/frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+RUN mkdir -p /app/data/pdfs /app/data/images /app/data/chroma_db /app/data/logs \
+    && rm -f /etc/nginx/sites-enabled/default
+
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app \
+    && chown -R appuser:appuser /usr/share/nginx/html
+
+EXPOSE 80 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health && curl -f http://localhost:80/ || exit 1
+
+COPY deploy/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+CMD ["/app/start.sh"]

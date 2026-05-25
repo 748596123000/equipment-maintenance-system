@@ -1,0 +1,1872 @@
+import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useAuthStore } from '@/stores/auth-store'
+import { useTheme } from '@/hooks/useTheme'
+import { api } from '@/lib/api'
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
+import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  Brain,
+  Search,
+  Database,
+  Server,
+  Save,
+  RotateCcw,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Cpu,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Trash2,
+  XCircle,
+  Download,
+  Package,
+  Wifi,
+  WifiOff,
+  Zap,
+  Key,
+  Activity,
+  Play,
+  FileText,
+  MessageSquare,
+  Sparkles,
+  BookOpen,
+  Clock,
+  Circle,
+} from 'lucide-react'
+
+interface SystemConfig {
+  dashscope_api_key: string
+  llm_backend: string
+  llm_model: string
+  llm_api_base_url: string
+  llm_api_key: string
+  embedding_model: string
+  llm_temperature: number
+  llm_max_tokens: number
+  chunk_size: number
+  chunk_overlap: number
+  top_k_results: number
+  retriever_score_threshold: number
+  max_upload_size: number
+  api_host: string
+  api_port: number
+  debug: boolean
+  ocr_backend: string
+  ocr_use_gpu: boolean
+  ocr_language: string
+  vision_backend: string
+  local_vision_model: string
+}
+
+interface GpuDeviceInfo {
+  index: number
+  name: string
+  total_vram_mb: number
+  used_vram_mb: number
+  free_vram_mb: number
+  compute_capability: string
+}
+
+interface GpuStatus {
+  gpu: {
+    available: boolean
+    cuda_available: boolean
+    device_count: number
+    devices: GpuDeviceInfo[]
+    torch_gpu: boolean
+    paddle_gpu: boolean
+    torch_available?: boolean
+    paddle_available?: boolean
+  }
+  ocr: {
+    backend: string
+    use_gpu: boolean
+    language: string
+    available: boolean
+    engine_loaded: boolean
+    engine_type?: string
+  }
+  vision: {
+    backend: string
+    local_model: string
+    local_available: boolean
+    current_backend: string
+  }
+}
+
+interface ServiceStatus {
+  llm: { available: boolean; backend?: string; model?: string; error?: string }
+  embedding: { available: boolean; model?: string; error?: string }
+  ocr: { available: boolean; backend?: string; error?: string }
+  vision: { available: boolean; backend?: string; current_backend?: string; error?: string }
+  dashscope: { available: boolean; api_key_set: boolean }
+}
+
+interface TestResult {
+  service: string
+  success: boolean
+  message: string
+  latency_ms: number
+}
+
+interface FunctionTestResult {
+  name: string
+  success: boolean
+  message: string
+  latency_ms: number
+  timestamp: Date
+}
+
+const LLM_MODELS = [
+  { value: 'qwen-max', label: 'Qwen Max（最强）' },
+  { value: 'qwen-plus', label: 'Qwen Plus（均衡）' },
+  { value: 'qwen-turbo', label: 'Qwen Turbo（最快）' },
+  { value: 'qwen-long', label: 'Qwen Long（长文本）' },
+]
+
+const LLM_BACKENDS = [
+  { value: 'dashscope', label: '通义千问 (DashScope)', website: 'https://dashscope.console.aliyun.com' },
+  { value: 'minimax', label: 'MiniMax（Token Plan）', website: 'https://platform.minimaxi.com/user-center/payment/token-plan' },
+  { value: 'deepseek', label: 'DeepSeek（深度求索）', website: 'https://platform.deepseek.com' },
+  { value: 'zhipu', label: '智谱AI (Zhipu)', website: 'https://open.bigmodel.cn' },
+  { value: 'baichuan', label: '百川智能 (Baichuan)', website: 'https://www.baichuan-ai.com' },
+  { value: 'moonshot', label: '月之暗面 (Kimi)', website: 'https://platform.moonshot.cn' },
+  { value: 'siliconflow', label: '硅基流动 (SiliconFlow)', website: 'https://www.siliconflow.cn' },
+  { value: 'ollama', label: 'Ollama（本地模型）', website: 'https://ollama.com' },
+  { value: 'openai_compatible', label: 'OpenAI 兼容 API', website: '' },
+]
+
+const MINIMAX_MODELS = [
+  { value: 'abab6.5s-chat', label: 'ABAB 6.5S Chat（推荐）' },
+  { value: 'abab6.5g-chat', label: 'ABAB 6.5G Chat' },
+  { value: 'abab5.5s-chat', label: 'ABAB 5.5S Chat' },
+  { value: 'abab5.5g-chat', label: 'ABAB 5.5G Chat' },
+]
+
+const DEEPSEEK_MODELS = [
+  { value: 'deepseek-chat', label: 'DeepSeek Chat（推荐）' },
+  { value: 'deepseek-coder', label: 'DeepSeek Coder（代码）' },
+  { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner（推理）' },
+]
+
+const ZHIPU_MODELS = [
+  { value: 'glm-4', label: 'GLM-4（最强）' },
+  { value: 'glm-4-flash', label: 'GLM-4-Flash（快速）' },
+  { value: 'glm-3-turbo', label: 'GLM-3-Turbo（均衡）' },
+]
+
+const BAICHUAN_MODELS = [
+  { value: 'Baichuan4', label: 'Baichuan4（推荐）' },
+  { value: 'Baichuan3-Turbo', label: 'Baichuan3-Turbo' },
+  { value: 'Baichuan2-Open', label: 'Baichuan2-Open' },
+]
+
+const MOONSHOT_MODELS = [
+  { value: 'moonshot-v1-128k', label: 'Moonshot V1 128K（长文本）' },
+  { value: 'moonshot-v1-32k', label: 'Moonshot V1 32K（推荐）' },
+  { value: 'moonshot-v1-8k', label: 'Moonshot V1 8K' },
+]
+
+const SILICONFLOW_MODELS = [
+  { value: 'Qwen/Qwen2.5-72B-Instruct', label: 'Qwen2.5-72B（推荐）' },
+  { value: 'deepseek-ai/DeepSeek-V2.5', label: 'DeepSeek V2.5' },
+  { value: 'THUDM/GLM-4-9B-Chat', label: 'GLM-4-9B' },
+  { value: 'Qwen/Qwen2-VL-72B-Instruct', label: 'Qwen2-VL-72B' },
+]
+
+const EMBEDDING_MODELS = [
+  { value: 'text-embedding-v3', label: 'text-embedding-v3（推荐）' },
+  { value: 'text-embedding-v2', label: 'text-embedding-v2' },
+  { value: 'text-embedding-v1', label: 'text-embedding-v1' },
+]
+
+const OCR_BACKENDS = [
+  { value: 'auto', label: '自动检测' },
+  { value: 'rapidocr', label: 'RapidOCR（CPU推荐）' },
+  { value: 'paddleocr', label: 'PaddleOCR（需GPU）' },
+  { value: 'api', label: 'DashScope API' },
+  { value: 'none', label: '关闭 OCR' },
+]
+
+const OCR_LANGUAGES = [
+  { value: 'ch', label: '中文' },
+  { value: 'en', label: '英文' },
+  { value: 'ch_en', label: '中英混合' },
+]
+
+interface ModelItem {
+  id: string
+  name: string
+  type: string
+  size: string
+  description: string
+  recommended: boolean
+  downloaded: boolean
+  download_status: string | null
+  download_progress: number
+}
+
+function ApiKeyInput({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  hint?: React.ReactNode
+}) {
+  const [visible, setVisible] = useState(false)
+  const isMasked = value === '******'
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex gap-1.5">
+        <div className="relative flex-1">
+          <Input
+            id={id}
+            type={visible && !isMasked ? 'text' : 'password'}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="pr-9"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="absolute right-0 top-0 h-full px-2.5 hover:bg-transparent"
+            onClick={() => setVisible(!visible)}
+          >
+            {visible && !isMasked ? (
+              <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </Button>
+        </div>
+      </div>
+      {isMasked && (
+        <p className="text-xs text-amber-600">已配置密钥，输入新值将覆盖</p>
+      )}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
+function TestButton({
+  service,
+  config,
+  onResult,
+  disabled,
+  label,
+  icon: IconComponent,
+}: {
+  service: 'llm' | 'embedding' | 'vision' | 'ocr'
+  config: SystemConfig
+  onResult: (result: TestResult) => void
+  disabled?: boolean
+  label?: string
+  icon?: React.ComponentType<{ className?: string }>
+}) {
+  const [testing, setTesting] = useState(false)
+
+  const handleTest = async () => {
+    setTesting(true)
+    try {
+      const payload: Record<string, string> = { service }
+      if (service === 'llm') {
+        payload.backend = config.llm_backend
+        payload.model = config.llm_model
+        if (config.llm_backend === 'openai_compatible') {
+          payload.base_url = config.llm_api_base_url
+          payload.api_key = config.llm_api_key !== '******' ? config.llm_api_key : ''
+        }
+      }
+      const res = await api.post<TestResult>('/admin/test-connection', payload)
+      onResult(res.data)
+    } catch (err: unknown) {
+      onResult({
+        service,
+        success: false,
+        message: '测试请求失败',
+        latency_ms: 0,
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="text-xs px-2 py-1 h-7"
+      disabled={disabled || testing}
+      onClick={handleTest}
+    >
+      {testing ? (
+        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+      ) : IconComponent ? (
+        <IconComponent className="mr-1 h-3 w-3" />
+      ) : (
+        <Zap className="mr-1 h-3 w-3" />
+      )}
+      {label || '测试连接'}
+    </Button>
+  )
+}
+
+function TestResultBadge({ result }: { result: TestResult | null }) {
+  if (!result) return null
+  return (
+    <div className={`text-xs flex items-center gap-1 mt-1 ${result.success ? 'text-green-600' : 'text-red-500'}`}>
+      {result.success ? (
+        <CheckCircle2 className="h-3 w-3 shrink-0" />
+      ) : (
+        <AlertCircle className="h-3 w-3 shrink-0" />
+      )}
+      <span className="truncate">{result.message}</span>
+    </div>
+  )
+}
+
+export default function ApiSettingsPage() {
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'admin'
+  
+  const { theme } = useTheme()
+  const isLight = theme === 'light'
+
+  const [config, setConfig] = useState<SystemConfig | null>(null)
+  const [originalConfig, setOriginalConfig] = useState<SystemConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingConfig, setPendingConfig] = useState<SystemConfig | null>(null)
+
+  const [gpuStatus, setGpuStatus] = useState<GpuStatus | null>(null)
+  const [gpuLoading, setGpuLoading] = useState(false)
+  const [clearingCache, setClearingCache] = useState(false)
+  const gpuRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [models, setModels] = useState<ModelItem[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set())
+  const [settingVisionModel, setSettingVisionModel] = useState<string | null>(null)
+
+  const [llmModels, setLlmModels] = useState<{ id: string; name: string }[]>([])
+  const [llmModelsLoading, setLlmModelsLoading] = useState(false)
+  const [llmStatus, setLlmStatus] = useState<{ available: boolean; connection: string } | null>(null)
+
+  const [servicesStatus, setServicesStatus] = useState<ServiceStatus | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      setLoading(true)
+      const res = await api.get<SystemConfig>('/admin/config')
+      setConfig(res.data)
+      setOriginalConfig(res.data)
+    } catch {
+      setMessage({ type: 'error', text: '加载配置失败' })
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const fetchGpuStatus = useCallback(async () => {
+    try {
+      setGpuLoading(true)
+      const res = await api.get<GpuStatus>('/admin/gpu-status')
+      setGpuStatus(res.data)
+    } catch {
+      setGpuStatus(null)
+    } finally {
+      setGpuLoading(false)
+    }
+  }, [])
+
+  const fetchServicesStatus = useCallback(async () => {
+    try {
+      const res = await api.get<ServiceStatus>('/admin/services/status')
+      setServicesStatus(res.data)
+    } catch {
+      setServicesStatus(null)
+    }
+  }, [])
+
+  const handleClearGpuCache = async () => {
+    try {
+      setClearingCache(true)
+      await api.post('/admin/gpu-cache/clear')
+      setMessage({ type: 'success', text: 'GPU缓存已清理' })
+      fetchGpuStatus()
+    } catch {
+      setMessage({ type: 'error', text: '清理GPU缓存失败' })
+    } finally {
+      setClearingCache(false)
+    }
+  }
+
+  const fetchModels = useCallback(async () => {
+    try {
+      setModelsLoading(true)
+      const res = await api.get<{ models: ModelItem[] }>('/models/available')
+      setModels(res.data.models || [])
+    } catch {
+      setModels([])
+    } finally {
+      setModelsLoading(false)
+    }
+  }, [])
+
+  const fetchLlmModels = useCallback(async (backend?: string, baseUrl?: string, apiKey?: string) => {
+    try {
+      setLlmModelsLoading(true)
+      const params = new URLSearchParams()
+      if (backend) params.set('backend', backend)
+      if (baseUrl) params.set('base_url', baseUrl)
+      if (apiKey) params.set('api_key', apiKey)
+      const qs = params.toString()
+      const res = await api.get<{ models: { id: string; name: string }[] }>(`/admin/llm/models${qs ? '?' + qs : ''}`)
+      setLlmModels(res.data.models || [])
+    } catch {
+      setLlmModels([])
+    } finally {
+      setLlmModelsLoading(false)
+    }
+  }, [])
+
+  const fetchLlmStatus = useCallback(async () => {
+    try {
+      const res = await api.get<{ available: boolean; connection: string }>('/admin/llm/status')
+      setLlmStatus(res.data)
+    } catch {
+      setLlmStatus(null)
+    }
+  }, [])
+
+  const handleDownloadModel = async (modelId: string) => {
+    try {
+      setDownloadingIds(prev => new Set(prev).add(modelId))
+      await api.post('/models/download', { model_id: modelId })
+      pollDownloadStatus(modelId)
+    } catch {
+      setDownloadingIds(prev => {
+        const next = new Set(prev)
+        next.delete(modelId)
+        return next
+      })
+      setMessage({ type: 'error', text: '启动下载失败' })
+    }
+  }
+
+  const pollDownloadStatus = useCallback((modelId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get<{ status: string; progress: number }>(`/models/download/${encodeURIComponent(modelId)}/status`)
+        const { status, progress } = res.data
+        setModels(prev => prev.map(m =>
+          m.id === modelId ? { ...m, download_status: status, download_progress: progress } : m
+        ))
+        if (status === 'completed') {
+          clearInterval(interval)
+          setDownloadingIds(prev => {
+            const next = new Set(prev)
+            next.delete(modelId)
+            return next
+          })
+          setModels(prev => prev.map(m =>
+            m.id === modelId ? { ...m, downloaded: true } : m
+          ))
+          setMessage({ type: 'success', text: `${modelId.split('/').pop()} 下载完成` })
+          fetchGpuStatus()
+        } else if (status === 'failed') {
+          clearInterval(interval)
+          setDownloadingIds(prev => {
+            const next = new Set(prev)
+            next.delete(modelId)
+            return next
+          })
+          setMessage({ type: 'error', text: `${modelId.split('/').pop()} 下载失败` })
+        }
+      } catch {
+        clearInterval(interval)
+      }
+    }, 3000)
+  }, [fetchGpuStatus])
+
+  const handleDeleteModel = async (modelId: string) => {
+    try {
+      await api.delete(`/models/download/${encodeURIComponent(modelId)}`)
+      setModels(prev => prev.map(m =>
+        m.id === modelId ? { ...m, downloaded: false, download_status: null, download_progress: 0 } : m
+      ))
+      setMessage({ type: 'success', text: '模型已删除' })
+    } catch {
+      setMessage({ type: 'error', text: '删除模型失败' })
+    }
+  }
+
+  const handleSetVisionModel = async (modelId: string) => {
+    try {
+      setSettingVisionModel(modelId)
+      await api.put('/models/vision-model', { model_id: modelId })
+      updateField('local_vision_model', modelId)
+      updateField('vision_backend', 'local')
+      setMessage({ type: 'success', text: `视觉模型已切换为 ${modelId.split('/').pop()}，后端已设为本地模型` })
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { detail?: string } } }
+        setMessage({ type: 'error', text: axiosErr.response?.data?.detail || '切换模型失败' })
+      } else {
+        setMessage({ type: 'error', text: '切换模型失败' })
+      }
+    } finally {
+      setSettingVisionModel(null)
+    }
+  }
+
+  useEffect(() => {
+    fetchConfig()
+    fetchGpuStatus()
+    fetchModels()
+    fetchLlmStatus()
+    fetchServicesStatus()
+  }, [fetchConfig, fetchGpuStatus, fetchModels, fetchLlmStatus, fetchServicesStatus])
+
+  useEffect(() => {
+    gpuRefreshRef.current = setInterval(fetchGpuStatus, 30000)
+    return () => {
+      if (gpuRefreshRef.current) clearInterval(gpuRefreshRef.current)
+    }
+  }, [fetchGpuStatus])
+
+  const updateField = <K extends keyof SystemConfig>(key: K, value: SystemConfig[K]) => {
+    if (!config) return
+    setConfig(prev => prev ? { ...prev, [key]: value } : prev)
+    setMessage(null)
+  }
+
+  const hasChanges = config && originalConfig
+    ? JSON.stringify(config) !== JSON.stringify(originalConfig)
+    : false
+
+  const handleSave = async () => {
+    if (!config || !hasChanges) return
+
+    const changed: Record<string, unknown> = {}
+    for (const key of Object.keys(config) as Array<keyof SystemConfig>) {
+      if (config[key] !== originalConfig?.[key]) {
+        changed[key] = config[key]
+      }
+    }
+
+    setSaving(true)
+    setMessage(null)
+    try {
+      await api.put('/admin/config', changed)
+      setOriginalConfig({ ...config })
+      setMessage({ type: 'success', text: '配置保存成功，相关服务已自动重载' })
+      fetchServicesStatus()
+      fetchLlmStatus()
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string } } }
+        setMessage({ type: 'error', text: axiosErr.response?.data?.message || '保存失败' })
+      } else {
+        setMessage({ type: 'error', text: '保存失败' })
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReset = () => {
+    if (!originalConfig) return
+    setPendingConfig({ ...originalConfig })
+    setConfirmOpen(true)
+  }
+
+  const confirmReset = () => {
+    if (pendingConfig) {
+      setConfig(pendingConfig)
+      setMessage(null)
+    }
+    setConfirmOpen(false)
+    setPendingConfig(null)
+  }
+
+  const handleTestResult = (service: string, result: TestResult) => {
+    setTestResults(prev => ({ ...prev, [service]: result }))
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">API 管理</h1>
+        <Card>
+          <CardContent className="flex h-40 items-center justify-center">
+            <p className="text-muted-foreground">需要管理员权限</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">API 管理</h1>
+        <div className="space-y-4">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Card key={i}>
+              <CardContent className="h-40 animate-pulse rounded-lg bg-muted" />
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (!config) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">API 管理</h1>
+        <Card>
+          <CardContent className="flex h-40 items-center justify-center">
+            <p className="text-muted-foreground">无法加载配置信息</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">API 管理</h1>
+          <p className="text-muted-foreground mt-1">管理系统 API 配置和模型参数</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleReset} disabled={!hasChanges || saving}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            重置
+          </Button>
+          <Button onClick={handleSave} disabled={!hasChanges || saving}>
+            {saving ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            保存配置
+          </Button>
+        </div>
+      </div>
+
+      {message && (
+        <div className={`flex items-center gap-2 rounded-md px-4 py-3 text-sm ${
+          message.type === 'success'
+            ? 'bg-green-50 text-green-700'
+            : 'bg-destructive/10 text-destructive'
+        }`}>
+          {message.type === 'success' ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : (
+            <AlertCircle className="h-4 w-4 shrink-0" />
+          )}
+          {message.text}
+        </div>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-blue-500" />
+            服务状态总览
+          </CardTitle>
+          <CardDescription>
+            所有 API 服务的实时连接状态
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 mb-3">
+            <Button variant="outline" size="sm" onClick={fetchServicesStatus}>
+              <RefreshCw className="mr-1 h-3 w-3" />
+              刷新状态
+            </Button>
+          </div>
+          {servicesStatus ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              {[
+                { key: 'dashscope', label: 'DashScope', icon: Key, data: servicesStatus.dashscope },
+                { key: 'llm', label: 'LLM 大模型', icon: Brain, data: servicesStatus.llm },
+                { key: 'embedding', label: 'Embedding', icon: Search, data: servicesStatus.embedding },
+                { key: 'ocr', label: 'OCR 识别', icon: Eye, data: servicesStatus.ocr },
+                { key: 'vision', label: '视觉模型', icon: Cpu, data: servicesStatus.vision },
+              ].map(({ key, label, icon: Icon, data }) => (
+                <div 
+                  key={key} 
+                  className="premium-card p-3 flex flex-col justify-between min-h-[80px]"
+                  style={{ alignItems: 'stretch' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="h-3.5 w-3.5" style={{ color: isLight ? '#3b82f6' : '#00f0ff' }} />
+                      <span className="text-xs font-medium" style={{ color: isLight ? '#1e293b' : '#e8e8e8' }}>{label}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`status-dot ${data.available ? 'online' : 'offline'}`} />
+                      <Badge 
+                        variant={data.available ? 'default' : 'secondary'} 
+                        className="text-[10px] px-1.5"
+                        style={{ 
+                          background: data.available 
+                            ? (isLight ? '#dcfce7' : 'rgba(16, 185, 129, 0.2)') 
+                            : (isLight ? '#fee2e2' : 'rgba(239, 68, 68, 0.2)'),
+                          color: data.available 
+                            ? (isLight ? '#166534' : '#10b981') 
+                            : (isLight ? '#991b1b' : '#ef4444')
+                        }}
+                      >
+                        {data.available ? '可用' : '不可用'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="mt-auto">
+                    {data.available && 'model' in data && data.model && (
+                      <p className="text-[10px] truncate" style={{ color: isLight ? '#64748b' : '#6b7280' }}>{data.model}</p>
+                    )}
+                    {data.available && 'backend' in data && data.backend && (
+                      <p className="text-[10px] truncate" style={{ color: isLight ? '#64748b' : '#6b7280' }}>{data.backend}</p>
+                    )}
+                    {'api_key_set' in data && (
+                      <p className="text-[10px]" style={{ color: isLight ? '#64748b' : '#6b7280' }}>
+                        {data.api_key_set ? '✓ API Key 已配置' : '✗ API Key 未配置'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-16 text-muted-foreground text-sm">
+              加载服务状态...
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Key className="h-5 w-5 text-amber-500" />
+            API 密钥管理
+          </CardTitle>
+          <CardDescription>
+            配置系统核心 API 密钥，DashScope Key 同时用于 LLM、Embedding 和视觉服务
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="form-grid-fix">
+            <ApiKeyInput
+              id="dashscope-api-key"
+              label="DashScope API Key"
+              value={config.dashscope_api_key}
+              onChange={(v) => updateField('dashscope_api_key', v)}
+              placeholder="sk-xxxxxxxxxxxxxxxx"
+              hint="通义千问 API 密钥，从 dashscope.console.aliyun.com 获取，用于 LLM / Embedding / 视觉服务"
+            />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label style={{ color: isLight ? '#475569' : '#e8e8e8' }}>连接测试</Label>
+                <div className="flex gap-1.5">
+                  <TestButton
+                    service="llm"
+                    config={config}
+                    onResult={(r) => handleTestResult('llm', r)}
+                    label="LLM"
+                    icon={Zap}
+                  />
+                  <TestButton
+                    service="embedding"
+                    config={config}
+                    onResult={(r) => handleTestResult('embedding', r)}
+                    label="Embed"
+                    icon={Search}
+                  />
+                  <TestButton
+                    service="vision"
+                    config={config}
+                    onResult={(r) => handleTestResult('vision', r)}
+                    label="Vision"
+                    icon={Eye}
+                  />
+                </div>
+              </div>
+              <div className="premium-card p-3 space-y-1">
+                {testResults.llm && <TestResultBadge result={testResults.llm} />}
+                {testResults.embedding && <TestResultBadge result={testResults.embedding} />}
+                {testResults.vision && <TestResultBadge result={testResults.vision} />}
+                {testResults.ocr && <TestResultBadge result={testResults.ocr} />}
+                {!testResults.llm && !testResults.embedding && !testResults.vision && !testResults.ocr && (
+                  <p className="text-xs text-muted-foreground">点击上方按钮测试各服务连接</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Cpu className="h-5 w-5 text-cyan-500" />
+            GPU 状态监控
+          </CardTitle>
+          <CardDescription>
+            实时监控 GPU 设备状态和加速服务运行情况
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchGpuStatus}
+              disabled={gpuLoading}
+            >
+              {gpuLoading ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1 h-3 w-3" />
+              )}
+              刷新
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearGpuCache}
+              disabled={clearingCache || !gpuStatus?.gpu.available}
+            >
+              {clearingCache ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 h-3 w-3" />
+              )}
+              清理缓存
+            </Button>
+          </div>
+
+          {!gpuStatus ? (
+            <div className="flex items-center justify-center h-20 text-muted-foreground text-sm">
+              {gpuLoading ? '加载GPU状态...' : '无法获取GPU状态'}
+            </div>
+          ) : !gpuStatus.gpu.available ? (
+            <div className="rounded-lg border border-dashed p-4 text-center max-w-md mx-auto">
+              <XCircle className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm font-medium">未检测到 GPU 设备</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                系统将以 CPU 模式运行，OCR 和视觉模型将使用 API 或 CPU 推理
+              </p>
+              <div className="flex items-center justify-center gap-4 mt-3 text-xs text-muted-foreground">
+                <span>CUDA: {gpuStatus.gpu.cuda_available ? '✓' : '✗'}</span>
+                <span>PyTorch: {gpuStatus.gpu.torch_gpu ? '✓' : '✗'}</span>
+                <span>PaddlePaddle: {gpuStatus.gpu.paddle_gpu ? '✓' : '✗'}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="default" className="bg-green-500">GPU 可用</Badge>
+                <span className="text-sm text-muted-foreground">
+                  检测到 {gpuStatus.gpu.device_count} 个设备
+                </span>
+              </div>
+
+              {gpuStatus.gpu.devices.map((dev) => (
+                <div key={dev.index} className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{dev.name}</span>
+                    <Badge variant="outline" className="text-xs">
+                      CUDA {dev.compute_capability}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>显存使用</span>
+                      <span>{dev.used_vram_mb} / {dev.total_vram_mb} MB</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-cyan-500 transition-all"
+                        style={{
+                          width: `${Math.min(100, (dev.used_vram_mb / dev.total_vram_mb) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>PyTorch GPU: {gpuStatus.gpu.torch_gpu ? '✓' : '✗'}</span>
+                <span>PaddlePaddle GPU: {gpuStatus.gpu.paddle_gpu ? '✓' : '✗'}</span>
+              </div>
+            </div>
+          )}
+
+          {gpuStatus && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+              <div className="rounded-lg border p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">OCR 服务</span>
+                  <Badge variant={gpuStatus.ocr.available ? 'default' : 'secondary'} className="text-xs">
+                    {gpuStatus.ocr.available ? '可用' : '不可用'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  后端: {gpuStatus.ocr.backend} | GPU: {gpuStatus.ocr.use_gpu ? '开启' : '关闭'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  引擎: {gpuStatus.ocr.engine_type || (gpuStatus.ocr.engine_loaded ? '已加载' : '未加载')} | 语言: {gpuStatus.ocr.language}
+                </p>
+              </div>
+              <div className="rounded-lg border p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">视觉模型</span>
+                  <Badge variant={gpuStatus.vision.local_available ? 'default' : 'secondary'} className="text-xs">
+                    {gpuStatus.vision.current_backend}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  配置: {gpuStatus.vision.backend} | 本地: {gpuStatus.vision.local_available ? '可用' : '不可用'}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  模型: {gpuStatus.vision.local_model}
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Eye className="h-5 w-5 text-indigo-500" />
+            OCR / 视觉模型配置
+          </CardTitle>
+          <CardDescription>
+            配置文档图片OCR识别和视觉描述模型参数
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="ocr-backend">OCR 后端</Label>
+              <Select
+                value={config.ocr_backend}
+                onValueChange={(v) => updateField('ocr_backend', v)}
+              >
+                <SelectTrigger id="ocr-backend">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OCR_BACKENDS.map((b) => (
+                    <SelectItem key={b.value} value={b.value}>
+                      {b.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                auto 自动选择可用后端（RapidOCR → PaddleOCR → API）
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ocr-language">OCR 语言</Label>
+              <Select
+                value={config.ocr_language}
+                onValueChange={(v) => updateField('ocr_language', v)}
+              >
+                <SelectTrigger id="ocr-language">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OCR_LANGUAGES.map((l) => (
+                    <SelectItem key={l.value} value={l.value}>
+                      {l.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="ocr-use-gpu">OCR GPU 加速</Label>
+                <p className="text-xs text-muted-foreground">
+                  启用后 PaddleOCR 将使用 GPU 推理
+                </p>
+              </div>
+              <Switch
+                id="ocr-use-gpu"
+                checked={config.ocr_use_gpu}
+                onCheckedChange={(v) => updateField('ocr_use_gpu', v)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="vision-backend">视觉模型后端</Label>
+              <Select
+                value={
+                  config.vision_backend === 'local'
+                    ? config.local_vision_model
+                    : config.vision_backend
+                }
+                onValueChange={(v) => {
+                  if (v === 'auto' || v === 'dashscope') {
+                    updateField('vision_backend', v)
+                  } else {
+                    updateField('vision_backend', 'local')
+                    updateField('local_vision_model', v)
+                  }
+                }}
+              >
+                <SelectTrigger id="vision-backend">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">自动检测</SelectItem>
+                  <SelectItem value="dashscope">DashScope API</SelectItem>
+                  {models
+                    .filter((m) => m.type === 'vision' && m.downloaded)
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}（本地）
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                已下载的视觉模型会自动出现在选项中，选择后使用本地推理
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-emerald-500" />
+            模型管理
+          </CardTitle>
+          <CardDescription>
+            下载和管理本地推理模型，下载后可离线使用
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={fetchModels} disabled={modelsLoading}>
+              {modelsLoading ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1 h-3 w-3" />
+              )}
+              刷新
+            </Button>
+          </div>
+
+          {models.length === 0 && !modelsLoading ? (
+            <div className="flex items-center justify-center h-20 text-muted-foreground text-sm">
+              暂无可用模型
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {models.map((model) => (
+                <div
+                  key={model.id}
+                  className="rounded-lg border p-3 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{model.name}</span>
+                      {model.recommended && (
+                        <Badge variant="default" className="text-xs bg-blue-500">推荐</Badge>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        {model.type === 'vision' ? '视觉' : model.type === 'ocr' ? 'OCR' : model.type}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{model.size}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {model.downloaded ? (
+                        <>
+                          <Badge variant="default" className="text-xs bg-green-500">已下载</Badge>
+                          {model.type === 'vision' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-6"
+                              disabled={settingVisionModel !== null}
+                              onClick={() => handleSetVisionModel(model.id)}
+                            >
+                              {settingVisionModel === model.id ? (
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              ) : null}
+                              设为视觉模型
+                            </Button>
+                          )}
+                          {model.id !== 'PaddleOCR/PPOCRv4' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-6 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteModel(model.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </>
+                      ) : model.download_status === 'downloading' || model.download_status === 'installing_deps' ? (
+                        <div className="flex items-center gap-2 w-40">
+                          <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-blue-500 transition-all"
+                              style={{ width: `${model.download_status === 'installing_deps' ? 100 : model.download_progress}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {model.download_status === 'installing_deps' ? '安装依赖' : `${model.download_progress}%`}
+                          </span>
+                        </div>
+                      ) : model.download_status === 'failed' ? (
+                        <>
+                          <Badge variant="destructive" className="text-xs">失败</Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs h-6"
+                            onClick={() => handleDownloadModel(model.id)}
+                          >
+                            重试
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-6"
+                          disabled={downloadingIds.has(model.id)}
+                          onClick={() => handleDownloadModel(model.id)}
+                        >
+                          {downloadingIds.has(model.id) ? (
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          ) : (
+                            <Download className="mr-1 h-3 w-3" />
+                          )}
+                          下载
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{model.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-blue-500" />
+            大语言模型配置
+          </CardTitle>
+          <CardDescription>
+            配置 AI 问答和作业指引生成使用的语言模型，支持本地模型和自定义API
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="llm-backend">LLM 后端</Label>
+              <Select
+                value={config.llm_backend}
+                onValueChange={(v) => {
+                  updateField('llm_backend', v)
+                  if (v === 'dashscope') {
+                    updateField('llm_model', 'qwen-max')
+                    setLlmModels(LLM_MODELS.map(m => ({ id: m.value, name: m.label })))
+                  } else {
+                    fetchLlmModels(v, config.llm_api_base_url, config.llm_api_key)
+                  }
+                }}
+              >
+                <SelectTrigger id="llm-backend">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LLM_BACKENDS.map((b) => (
+                    <SelectItem key={b.value} value={b.value}>
+                      {b.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-2">
+                {llmStatus?.available ? (
+                  <Badge variant="default" className="text-xs bg-green-500">
+                    <Wifi className="h-3 w-3 mr-1" />
+                    已连接
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-xs">
+                    <WifiOff className="h-3 w-3 mr-1" />
+                    未连接
+                  </Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-5 px-1"
+                  onClick={fetchLlmStatus}
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="llm-model">LLM 模型</Label>
+              {config.llm_backend === 'dashscope' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LLM_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : config.llm_backend === 'minimax' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MINIMAX_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : config.llm_backend === 'deepseek' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEEPSEEK_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : config.llm_backend === 'zhipu' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ZHIPU_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : config.llm_backend === 'baichuan' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BAICHUAN_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : config.llm_backend === 'moonshot' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MOONSHOT_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : config.llm_backend === 'siliconflow' ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SILICONFLOW_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : llmModels.length > 0 ? (
+                <Select
+                  value={config.llm_model}
+                  onValueChange={(v) => updateField('llm_model', v)}
+                >
+                  <SelectTrigger id="llm-model">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {llmModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="llm-model"
+                  value={config.llm_model}
+                  onChange={(e) => updateField('llm_model', e.target.value)}
+                  placeholder="输入模型名称"
+                />
+              )}
+              {config.llm_backend !== 'dashscope' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-5 px-1"
+                  disabled={llmModelsLoading}
+                  onClick={() => fetchLlmModels(config.llm_backend, config.llm_api_base_url, config.llm_api_key)}
+                >
+                  {llmModelsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  刷新模型列表
+                </Button>
+              )}
+            </div>
+
+            {config.llm_backend === 'openai_compatible' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="llm-api-base-url">API 基础 URL</Label>
+                  <Input
+                    id="llm-api-base-url"
+                    value={config.llm_api_base_url}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="http://localhost:8000/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    OpenAI 兼容 API 的基础地址，如 vLLM、LMStudio 等
+                  </p>
+                </div>
+                <ApiKeyInput
+                  id="llm-api-key"
+                  label="API 密钥"
+                  value={config.llm_api_key}
+                  onChange={(v) => updateField('llm_api_key', v)}
+                  placeholder="sk-..."
+                  hint="部分 API 不需要密钥可留空"
+                />
+              </>
+            )}
+
+            {config.llm_backend === 'ollama' && (
+              <div className="space-y-2">
+                <Label htmlFor="ollama-url">Ollama 服务地址</Label>
+                <Input
+                  id="ollama-url"
+                  value={config.llm_api_base_url}
+                  onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                  placeholder="http://localhost:11434"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Ollama 默认地址 http://localhost:11434，支持自定义
+                </p>
+              </div>
+            )}
+
+            {config.llm_backend === 'minimax' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="minimax-api-url">MiniMax API 地址</Label>
+                  <Input
+                    id="minimax-api-url"
+                    value={config.llm_api_base_url || 'https://api.minimax.chat/v1'}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="https://api.minimax.chat/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    MiniMax API 基础地址，默认使用 Token Plan 端点
+                  </p>
+                </div>
+                <ApiKeyInput
+                  id="minimax-api-key"
+                  label="MiniMax API 密钥"
+                  value={config.llm_api_key}
+                  onChange={(v) => updateField('llm_api_key', v)}
+                  placeholder="sk-xxxxxxxxxxxxxxxx"
+                  hint={
+                    <span>
+                      从{' '}
+                      <a href="https://platform.minimaxi.com/user-center/payment/token-plan" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">platform.minimaxi.com</a>{' '}购买 Token Plan 获取 API 密钥
+                    </span>
+                  }
+                />
+              </>
+            )}
+
+            {config.llm_backend === 'deepseek' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="deepseek-api-url">DeepSeek API 地址</Label>
+                  <Input
+                    id="deepseek-api-url"
+                    value={config.llm_api_base_url || 'https://api.deepseek.com/v1'}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="https://api.deepseek.com/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">DeepSeek API 基础地址</p>
+                </div>
+                <ApiKeyInput
+                  id="deepseek-api-key"
+                  label="DeepSeek API 密钥"
+                  value={config.llm_api_key}
+                  onChange={(v) => updateField('llm_api_key', v)}
+                  placeholder="sk-xxxxxxxxxxxxxxxx"
+                  hint={
+                    <span>
+                      从{' '}
+                      <a href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">platform.deepseek.com</a>{' '}获取 API 密钥
+                    </span>
+                  }
+                />
+              </>
+            )}
+
+            {config.llm_backend === 'zhipu' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="zhipu-api-url">智谱AI API 地址</Label>
+                  <Input
+                    id="zhipu-api-url"
+                    value={config.llm_api_base_url || 'https://open.bigmodel.cn/api/paas/v4'}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="https://open.bigmodel.cn/api/paas/v4"
+                  />
+                  <p className="text-xs text-muted-foreground">智谱AI API 基础地址</p>
+                </div>
+                <ApiKeyInput
+                  id="zhipu-api-key"
+                  label="智谱AI API 密钥"
+                  value={config.llm_api_key}
+                  onChange={(v) => updateField('llm_api_key', v)}
+                  placeholder="sk-xxxxxxxxxxxxxxxx"
+                  hint={
+                    <span>
+                      从{' '}
+                      <a href="https://open.bigmodel.cn" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">open.bigmodel.cn</a>{' '}获取 API 密钥
+                    </span>
+                  }
+                />
+              </>
+            )}
+
+            {config.llm_backend === 'baichuan' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="baichuan-api-url">百川智能 API 地址</Label>
+                  <Input
+                    id="baichuan-api-url"
+                    value={config.llm_api_base_url || 'https://api.baichuan-ai.com/v1'}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="https://api.baichuan-ai.com/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">百川智能 API 基础地址</p>
+                </div>
+                <ApiKeyInput
+                  id="baichuan-api-key"
+                  label="百川智能 API 密钥"
+                  value={config.llm_api_key}
+                  onChange={(v) => updateField('llm_api_key', v)}
+                  placeholder="sk-xxxxxxxxxxxxxxxx"
+                  hint={
+                    <span>
+                      从{' '}
+                      <a href="https://www.baichuan-ai.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">www.baichuan-ai.com</a>{' '}获取 API 密钥
+                    </span>
+                  }
+                />
+              </>
+            )}
+
+            {config.llm_backend === 'moonshot' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="moonshot-api-url">Kimi API 地址</Label>
+                  <Input
+                    id="moonshot-api-url"
+                    value={config.llm_api_base_url || 'https://api.moonshot.cn/v1'}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="https://api.moonshot.cn/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">月之暗面 API 基础地址</p>
+                </div>
+                <ApiKeyInput
+                  id="moonshot-api-key"
+                  label="Kimi API 密钥"
+                  value={config.llm_api_key}
+                  onChange={(v) => updateField('llm_api_key', v)}
+                  placeholder="sk-xxxxxxxxxxxxxxxx"
+                  hint={
+                    <span>
+                      从{' '}
+                      <a href="https://platform.moonshot.cn" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">platform.moonshot.cn</a>{' '}获取 API 密钥
+                    </span>
+                  }
+                />
+              </>
+            )}
+
+            {config.llm_backend === 'siliconflow' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="siliconflow-api-url">硅基流动 API 地址</Label>
+                  <Input
+                    id="siliconflow-api-url"
+                    value={config.llm_api_base_url || 'https://api.siliconflow.cn/v1'}
+                    onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                    placeholder="https://api.siliconflow.cn/v1"
+                  />
+                  <p className="text-xs text-muted-foreground">硅基流动 API 基础地址</p>
+                </div>
+                <ApiKeyInput
+                  id="siliconflow-api-key"
+                  label="硅基流动 API 密钥"
+                  value={config.llm_api_key}
+                  onChange={(v) => updateField('llm_api_key', v)}
+                  placeholder="sk-xxxxxxxxxxxxxxxx"
+                  hint={
+                    <span>
+                      从{' '}
+                      <a href="https://www.siliconflow.cn" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">www.siliconflow.cn</a>{' '}获取 API 密钥
+                    </span>
+                  }
+                />
+              </>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="embedding-model">Embedding 模型</Label>
+              <Select
+                value={config.embedding_model}
+                onValueChange={(v) => updateField('embedding_model', v)}
+              >
+                <SelectTrigger id="embedding-model">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EMBEDDING_MODELS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                当前: <code className="bg-muted px-1 rounded">{config.embedding_model}</code>
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="temperature">
+                生成温度
+                <Badge variant="secondary" className="ml-2">{config.llm_temperature}</Badge>
+              </Label>
+              <Input
+                id="temperature"
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                value={config.llm_temperature}
+                onChange={(e) => updateField('llm_temperature', parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted-foreground">
+                值越高输出越随机（0.0 ~ 2.0），推荐 0.7
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="max-tokens">
+                最大输出 Token
+                <Badge variant="secondary" className="ml-2">{config.llm_max_tokens}</Badge>
+              </Label>
+              <Input
+                id="max-tokens"
+                type="number"
+                min={1}
+                max={32768}
+                step={256}
+                value={config.llm_max_tokens}
+                onChange={(e) => updateField('llm_max_tokens', parseInt(e.target.value) || 4096)}
+              />
+              <p className="text-xs text-muted-foreground">
+                单次回答最大 token 数（1 ~ 32768）
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="h-5 w-5 text-green-500" />
+            检索配置
+          </CardTitle>
+          <CardDescription>
+            配置知识检索和向量匹配参数
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="top-k">
+                检索结果数 (Top K)
+                <Badge variant="secondary" className="ml-2">{config.top_k_results}</Badge>
+              </Label>
+              <Input
+                id="top-k"
+                type="number"
+                min={1}
+                max={20}
+                value={config.top_k_results}
+                onChange={(e) => updateField('top_k_results', parseInt(e.target.value) || 5)}
+              />
+              <p className="text-xs text-muted-foreground">
+                每次检索返回的最大结果数（1 ~ 20）
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="score-threshold">
+                相似度阈值
+                <Badge variant="secondary" className="ml-2">{config.retriever_score_threshold}</Badge>
+              </Label>
+              <Input
+                id="score-threshold"
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={config.retriever_score_threshold}
+                onChange={(e) => updateField('retriever_score_threshold', parseFloat(e.target.value) || 0.3)}
+              />
+              <p className="text-xs text-muted-foreground">
+                低于此阈值的结果将被过滤（0.0 ~ 1.0）
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-purple-500" />
+            文本分块配置
+          </CardTitle>
+          <CardDescription>
+            配置文档解析后的文本分块策略
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="chunk-size">
+                分块大小
+                <Badge variant="secondary" className="ml-2">{config.chunk_size} 字符</Badge>
+              </Label>
+              <Input
+                id="chunk-size"
+                type="number"
+                min={100}
+                max={4096}
+                step={64}
+                value={config.chunk_size}
+                onChange={(e) => updateField('chunk_size', parseInt(e.target.value) || 512)}
+              />
+              <p className="text-xs text-muted-foreground">
+                每个文本块的最大字符数（100 ~ 4096）
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="chunk-overlap">
+                分块重叠
+                <Badge variant="secondary" className="ml-2">{config.chunk_overlap} 字符</Badge>
+              </Label>
+              <Input
+                id="chunk-overlap"
+                type="number"
+                min={0}
+                max={500}
+                step={10}
+                value={config.chunk_overlap}
+                onChange={(e) => updateField('chunk_overlap', parseInt(e.target.value) || 50)}
+              />
+              <p className="text-xs text-muted-foreground">
+                相邻块之间的重叠字符数（0 ~ 500）
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Server className="h-5 w-5 text-orange-500" />
+            服务配置
+          </CardTitle>
+          <CardDescription>
+            系统服务运行参数（只读）
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">监听地址</p>
+              <p className="font-mono text-sm bg-muted px-2 py-1 rounded">{config.api_host}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">监听端口</p>
+              <p className="font-mono text-sm bg-muted px-2 py-1 rounded">{config.api_port}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">最大上传大小</p>
+              <p className="font-mono text-sm bg-muted px-2 py-1 rounded">
+                {(config.max_upload_size / 1024 / 1024).toFixed(0)} MB
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {hasChanges && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <Card className="shadow-lg border-orange-200 bg-orange-50">
+            <CardContent className="flex items-center gap-3 py-3 px-4">
+              <AlertCircle className="h-4 w-4 text-orange-600 shrink-0" />
+              <span className="text-sm text-orange-800">有未保存的更改</span>
+              <Separator orientation="vertical" className="h-4" />
+              <Button size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Save className="mr-1 h-3 w-3" />}
+                保存
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleReset}>
+                取消
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认重置</DialogTitle>
+            <DialogDescription>
+              将所有配置恢复为上次保存的状态，未保存的更改将丢失。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={confirmReset}>确认重置</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

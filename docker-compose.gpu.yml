@@ -1,0 +1,71 @@
+# 设备检修知识检索与作业系统 GPU版 Docker编排文件
+# 需要安装 NVIDIA Container Toolkit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+#
+# 启动命令: docker compose -f docker-compose.gpu.yml up -d
+
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: equipment-maintenance-system-gpu
+    ports:
+      - "80:80"
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+      - huggingface-cache:/root/.cache/huggingface
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-your_api_key_here}
+      - LLM_BACKEND=${LLM_BACKEND:-dashscope}
+      - LLM_MODEL=${LLM_MODEL:-qwen-max}
+      - LLM_API_BASE_URL=${LLM_API_BASE_URL:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v3}
+      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      - SQLITE_DB_PATH=/app/data/app.db
+      - UPLOAD_DIR=/app/data/pdfs
+      - IMAGE_DIR=/app/data/images
+      - OCR_BACKEND=${OCR_BACKEND:-auto}
+      - OCR_USE_GPU=${OCR_USE_GPU:-true}
+      - OCR_LANGUAGE=${OCR_LANGUAGE:-ch}
+      - VISION_BACKEND=${VISION_BACKEND:-auto}
+      - LOCAL_VISION_MODEL=${LOCAL_VISION_MODEL:-Qwen/Qwen2-VL-2B-Instruct}
+      - VISION_GPU_DEVICE=${VISION_GPU_DEVICE:-auto}
+      - NVIDIA_VISIBLE_DEVICES=all
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -f http://localhost:8000/health && curl -f http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: '4'
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  huggingface-cache:
+
+networks:
+  default:
+    driver: bridge

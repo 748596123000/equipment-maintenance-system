@@ -1,0 +1,2044 @@
+@import "tailwindcss";
+
+@theme {
+  /* Cyberpunk Core Colors */
+  --color-primary: #00f0ff;
+  --color-primary-foreground: #000000;
+  --color-secondary: #0f0f1a;
+  --color-secondary-foreground: #e0e0e0;
+  --color-accent: #ff00ff;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #ff3366;
+  --color-destructive-foreground: #ffffff;
+  --color-muted: #1a1a2e;
+  --color-muted-foreground: #6b7280;
+  --color-border: #2d2d4a;
+  --color-ring: #00f0ff;
+  --color-background: #050510;
+  --color-foreground: #e8e8f0;
+  --color-card: #0a0a1f;
+  --color-card-foreground: #e8e8f0;
+  --color-popover: #0d0d20;
+  --color-popover-foreground: #f0f0f8;
+  --color-sidebar: #070712;
+  --color-sidebar-foreground: #a0a0c0;
+  --color-sidebar-accent: #00f0ff;
+  --radius: 0.75rem;
+  --font-size-base: 16px;
+}
+
+:root {
+  font-size: var(--font-size-base);
+  
+  /* Default to dark theme variables */
+  /* Glass Effect - Default Dark */
+  --glass-bg: rgba(15, 15, 35, 0.7);
+  --glass-border: rgba(0, 240, 255, 0.15);
+  --glass-shadow: none;
+  
+  /* Cyberpunk Gradient System */
+  --cyber-cyan: #00f0ff;
+  --cyber-blue: #0066ff;
+  --cyber-magenta: #ff00ff;
+  --cyber-purple: #8b5cf6;
+  --cyber-green: #00ff88;
+  
+  /* Glow Effects */
+  --glow-cyan: 0 0 20px rgba(0, 240, 255, 0.4);
+  --glow-blue: 0 0 20px rgba(0, 102, 255, 0.4);
+  --glow-magenta: 0 0 20px rgba(255, 0, 255, 0.4);
+  --glow-subtle: 0 0 40px rgba(0, 240, 255, 0.1);
+  
+  /* 3D Shadows */
+  --shadow-cyber: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 240, 255, 0.1);
+  --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(0, 240, 255, 0.08);
+  --shadow-hover: 0 35px 60px -15px rgba(0, 0, 0, 0.8), 0 0 50px rgba(0, 240, 255, 0.15);
+  
+  /* Input Styles */
+  --cyber-input-bg: rgba(10, 10, 25, 0.9);
+  --cyber-input-border: rgba(0, 240, 255, 0.3);
+  --input-bg: var(--cyber-input-bg);
+  --input-border: var(--cyber-input-border);
+  --input-text: #e8e8f0;
+  
+  /* Grid Pattern */
+  --grid-color: rgba(0, 240, 255, 0.03);
+}
+
+/* ============= Base Typography ============= */
+
+html {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: inherit;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-foreground);
+}
+
+/* ============= Font Size Adjustments ============= */
+
+[data-font-size="small"] {
+  font-size: 14px;
+}
+
+[data-font-size="medium"] {
+  font-size: 16px;
+}
+
+[data-font-size="large"] {
+  font-size: 18px;
+}
+
+/* ============= Cyberpunk Animations ============= */
+
+/* Breathe Glow - Status Indicator Pulse (锐利版) */
+@keyframes breathe-glow {
+  0%, 100% { 
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1);
+    box-shadow: 0 0 10px currentColor;
+  }
+  50% { 
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+    box-shadow: 0 0 25px currentColor, 0 0 40px currentColor;
+  }
+}
+
+/* --- NEW: 3D透视与粒子动画系统 --- */
+
+/* 粒子漂移动画 - CSS-only星点效果 */
+@keyframes particleDrift {
+  0% {
+    transform: translateY(100vh) translateX(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-100vh) translateX(50px);
+    opacity: 0;
+  }
+}
+
+/* 扫描线动画 - 水平移动效果 */
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0.3;
+  }
+}
+
+/* 全息彩虹渐变动画 */
+@keyframes holographicShift {
+  0%, 100% {
+    background-position: 0% 50%;
+    filter: hue-rotate(0deg);
+  }
+  25% {
+    background-position: 50% 100%;
+    filter: hue-rotate(45deg);
+  }
+  50% {
+    background-position: 100% 50%;
+    filter: hue-rotate(90deg);
+  }
+  75% {
+    background-position: 50% 0%;
+    filter: hue-rotate(180deg);
+  }
+}
+
+/* 霓虹发光脉冲 */
+@keyframes neonPulse {
+  0%, 100% {
+    text-shadow: 
+      0 0 5px currentColor,
+      0 0 10px currentColor,
+      0 0 20px currentColor;
+  }
+  50% {
+    text-shadow: 
+      0 0 10px currentColor,
+      0 0 20px currentColor,
+      0 0 40px currentColor,
+      0 0 60px currentColor;
+  }
+}
+
+/* 焦散光斑动画 */
+@keyframes causticLight {
+  0%, 100% {
+    opacity: 0.15;
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    opacity: 0.25;
+    transform: translate(30px, -20px) scale(1.1);
+  }
+  66% {
+    opacity: 0.2;
+    transform: translate(-20px, 30px) scale(0.95);
+  }
+}
+
+/* 3D卡片跟随鼠标倾斜效果 */
+@keyframes cardTilt {
+  0%, 100% {
+    transform: perspective(1000px) rotateX(0deg) rotateY(0deg);
+  }
+  25% {
+    transform: perspective(1000px) rotateX(2deg) rotateY(-2deg);
+  }
+  50% {
+    transform: perspective(1000px) rotateX(0deg) rotateY(0deg);
+  }
+  75% {
+    transform: perspective(1000px) rotateX(-2deg) rotateY(2deg);
+  }
+}
+
+/* 打字机效果 */
+@keyframes typewriter {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* 缩放入场动画 */
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 页面切换过渡 */
+@keyframes pageTransition {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 边框流动效果 */
+@keyframes borderFlow {
+  0% {
+    background-position: 0% 0%, 100% 0%, 100% 100%, 0% 100%;
+  }
+  100% {
+    background-position: 100% 0%, 100% 100%, 0% 100%, 0% 0%;
+  }
+}
+
+/* 视差层滚动动画 */
+@keyframes parallaxFloat {
+  0%, 100% {
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    transform: translateY(-10px) translateX(5px);
+  }
+}
+
+/* 环境光脉动 */
+@keyframes ambientPulse {
+  0%, 100% {
+    opacity: 0.06;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.12;
+    transform: scale(1.05);
+  }
+}
+
+/* ============= 新增动画类 ============= */
+
+/* 粒子容器 */
+.particle-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* CSS-only 粒子效果（使用box-shadow模拟星点） */
+.css-particles {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  animation: particleDrift 15s linear infinite;
+}
+
+/* 扫描线覆盖层 */
+.scanline-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(0, 240, 255, 0.15),
+    transparent
+  );
+  animation: scanline 8s linear infinite;
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* 全息效果 */
+.holographic {
+  position: relative;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 240, 255, 0.1) 0%,
+    rgba(255, 0, 255, 0.1) 25%,
+    rgba(139, 92, 246, 0.1) 50%,
+    rgba(0, 102, 255, 0.1) 75%,
+    rgba(0, 240, 255, 0.1) 100%
+  );
+  background-size: 400% 400%;
+  animation: holographicShift 8s ease infinite;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+}
+
+/* 霓虹发光文字 */
+.neon-text {
+  color: #00f0ff;
+  text-shadow: 
+    0 0 5px #00f0ff,
+    0 0 10px #00f0ff,
+    0 0 20px #00f0ff;
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+.neon-text-alt {
+  color: #ff00ff;
+  text-shadow: 
+    0 0 5px #ff00ff,
+    0 0 10px #ff00ff,
+    0 0 20px #ff00ff;
+  animation: neonPulse 2.5s ease-in-out infinite;
+}
+
+/* 焦散光斑效果 */
+.caustic-light {
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(
+    circle,
+    rgba(0, 240, 255, 0.2) 0%,
+    rgba(0, 240, 255, 0.05) 40%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  animation: causticLight 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* 透视容器 */
+.perspective-container {
+  perspective: 1200px;
+  perspective-origin: center center;
+}
+
+/* 3D卡片跟随效果（需JS配合） */
+.card-3d-tracked {
+  transform-style: preserve-3d;
+  transition: transform 0.1s ease-out;
+}
+
+/* 视差层 */
+.parallax-layer-1 {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.parallax-layer-2 {
+  transform: translateZ(-50px) scale(1.05);
+  will-change: transform;
+}
+
+.parallax-layer-3 {
+  transform: translateZ(-100px) scale(1.1);
+  will-change: transform;
+}
+
+/* 流动边框效果 */
+.cyber-border-animated {
+  position: relative;
+  background: linear-gradient(
+    90deg,
+    #00f0ff,
+    #8b5cf6,
+    #ff00ff,
+    #00f0ff
+  );
+  background-size: 300% 100%;
+  animation: borderFlow 4s linear infinite;
+  padding: 2px;
+}
+
+.cyber-border-animated > * {
+  background: #0a0a1f;
+  border-radius: inherit;
+}
+
+/* 增强的cyber-card 3D效果 */
+.cyber-card-3d {
+  transform-style: preserve-3d;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cyber-card-3d:hover {
+  transform: translateY(-8px) rotateX(5deg) rotateY(-5deg);
+  box-shadow: 
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    0 0 60px rgba(0, 240, 255, 0.2),
+    -5px 5px 20px rgba(0, 240, 255, 0.1);
+}
+
+/* 缩放入场动画类 */
+.animate-fade-in-scale {
+  animation: fadeInScale 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 页面过渡效果 */
+.page-transition {
+  animation: pageTransition 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 打字机效果 */
+.typewriter {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typewriter 2s steps(40, end) forwards;
+  display: inline-block;
+}
+
+.typewriter-cursor::after {
+  content: '|';
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 视差浮动效果 */
+.parallax-float {
+  animation: parallaxFloat 8s ease-in-out infinite;
+}
+
+/* 环境光效果（暗色主题） */
+[data-theme="dark"] .ambient-light {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 240, 255, 0.08) 0%,
+    transparent 70%
+  );
+  animation: ambientPulse 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* 背景网格动态效果增强 */
+[data-theme="dark"] body::before {
+  background: 
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(var(--grid-color) 1px, transparent 1px);
+  background-size: 60px 60px;
+  animation: gridPulse 8s ease-in-out infinite;
+}
+
+/* 动态几何装饰 */
+.geo-decoration {
+  position: absolute;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  animation: parallaxFloat 10s ease-in-out infinite;
+}
+
+.geo-decoration::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    45deg,
+    transparent,
+    rgba(0, 240, 255, 0.1),
+    transparent
+  );
+  animation: borderFlow 6s linear infinite;
+}
+
+/* 发光边框效果 */
+.glow-border {
+  position: relative;
+}
+
+.glow-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(
+    45deg,
+    #00f0ff,
+    #ff00ff,
+    #00f0ff
+  );
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.5;
+  filter: blur(8px);
+  animation: neonPulse 3s ease-in-out infinite;
+}
+
+/* Status Pulse - Header Status Indicators */
+@keyframes statusPulse {
+  0%, 100% { 
+    opacity: 0.3;
+    boxShadow: 0 0 8px currentColor;
+  }
+  50% { 
+    opacity: 0.8;
+    boxShadow: 0 0 15px currentColor, 0 0 25px currentColor;
+  }
+}
+
+/* Gradient Shift - Hero Banner Text */
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Pulse Glow - Decorative Line */
+@keyframes pulse-glow {
+  0%, 100% { 
+    opacity: 0.6;
+    box-shadow: 0 0 15px #00f0ff;
+  }
+  50% { 
+    opacity: 1;
+    box-shadow: 0 0 25px #00f0ff, 0 0 40px #0066ff;
+  }
+}
+
+/* Subtle Glow Pulse - Anti Fatigue */
+@keyframes glowPulse {
+  0%, 100% { 
+    box-shadow: var(--shadow-cyber);
+  }
+  50% { 
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 50px rgba(0, 240, 255, 0.2);
+  }
+}
+
+/* 3D Card Float Effect */
+@keyframes cardFloat {
+  0%, 100% { transform: translateY(0px) rotateX(0deg); }
+  50% { transform: translateY(-4px) rotateX(1deg); }
+}
+
+/* Fade In Up - Smooth Entry */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Border Scan Effect */
+@keyframes borderScan {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+/* Grid Pulse */
+@keyframes gridPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.5; }
+}
+
+/* Animate Classes */
+.animate-glow-pulse {
+  animation: glowPulse 4s ease-in-out infinite;
+}
+
+.animate-card-float {
+  animation: cardFloat 6s ease-in-out infinite;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.animate-stagger > * {
+  opacity: 0;
+  animation: fadeInUp 0.4s ease-out forwards;
+}
+
+.animate-stagger > *:nth-child(1) { animation-delay: 0.1s; }
+.animate-stagger > *:nth-child(2) { animation-delay: 0.15s; }
+.animate-stagger > *:nth-child(3) { animation-delay: 0.2s; }
+.animate-stagger > *:nth-child(4) { animation-delay: 0.25s; }
+.animate-stagger > *:nth-child(5) { animation-delay: 0.3s; }
+.animate-stagger > *:nth-child(6) { animation-delay: 0.35s; }
+
+/* ============= Cyberpunk Cards ============= */
+
+/* 3D Depth Card */
+/* Base Cyber Card - 使用 CSS 变量支持亮色模式 */
+.cyber-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-cyber);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+/* Card Top Border Glow - 默认使用主色调，亮色模式会覆盖 */
+.cyber-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--color-primary) 50%, transparent 100%);
+  opacity: 0.6;
+}
+
+.cyber-card:hover {
+  transform: translateY(-6px) rotateX(2deg);
+  box-shadow: var(--shadow-hover);
+  border-color: var(--color-primary);
+  opacity: 0.95;
+}
+
+/* Glass Card Effect */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-cyber);
+}
+
+/* Premium Static Card */
+.glass-card-static {
+  background: linear-gradient(145deg, rgba(12, 12, 28, 0.9) 0%, rgba(8, 8, 20, 0.85) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.1);
+  border-radius: 16px;
+}
+
+/* ============= Cyberpunk Buttons ============= */
+
+.btn-cyber {
+  background: linear-gradient(135deg, var(--cyber-cyan) 0%, var(--cyber-blue) 100%);
+  color: #000000;
+  font-weight: 600;
+  padding: 0.875rem 1.75rem;
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-cyber:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 240, 255, 0.3);
+}
+
+.btn-cyber:active {
+  transform: translateY(0);
+}
+
+.btn-cyber::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.5s ease;
+}
+
+.btn-cyber:hover::after {
+  transform: translateX(100%);
+}
+
+/* Outline Button */
+.btn-outline-cyber {
+  background: transparent;
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: var(--cyber-cyan);
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.btn-outline-cyber:hover {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+}
+
+/* ============= Input Fields ============= */
+
+.cyber-input {
+  background: var(--cyber-input-bg);
+  border: 1px solid var(--cyber-input-border);
+  border-radius: 12px;
+  padding: 0.875rem 1.25rem;
+  color: #e8e8f0;
+  transition: all 0.3s ease;
+  font-size: 0.9375rem;
+}
+
+.cyber-input:focus {
+  outline: none;
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15), 0 0 30px rgba(0, 240, 255, 0.1);
+}
+
+.cyber-input::placeholder {
+  color: #505080;
+}
+
+/* ============= Navigation ============= */
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-radius: 12px;
+  color: #6b7280;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.nav-item:hover {
+  background: rgba(0, 240, 255, 0.08);
+  color: var(--cyber-cyan);
+}
+
+.nav-item.active {
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--cyber-cyan);
+  border-left: 3px solid var(--cyber-cyan);
+}
+
+/* ============= Status Indicators ============= */
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+}
+
+.status-dot.online {
+  background: var(--cyber-green);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+}
+
+.status-dot.offline {
+  background: var(--color-destructive);
+  box-shadow: 0 0 10px rgba(255, 51, 102, 0.5);
+}
+
+.status-dot.warning {
+  background: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+}
+
+/* ============= Scrollbar - Cyberpunk Style ============= */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 240, 255, 0.3) rgba(15, 15, 35, 0.5);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 15, 35, 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.4) 0%, rgba(0, 240, 255, 0.2) 100%);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.6) 0%, rgba(0, 240, 255, 0.3) 100%);
+}
+
+/* ============= Utility Classes ============= */
+
+.cyber-text {
+  background: linear-gradient(135deg, var(--cyber-cyan) 0%, var(--cyber-magenta) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.cyber-glow {
+  box-shadow: var(--glow-cyan);
+}
+
+.cyber-border {
+  border: 1px solid rgba(0, 240, 255, 0.3);
+}
+
+.page-title {
+  font-size: 1.875rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--color-foreground);
+  margin-bottom: 0.5rem;
+}
+
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-foreground);
+  letter-spacing: -0.02em;
+}
+
+.input-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #a0a0c0;
+  margin-bottom: 0.5rem;
+}
+
+/* ============= Stat Cards ============= */
+
+.stat-card {
+  background: linear-gradient(145deg, rgba(15, 15, 35, 0.95) 0%, rgba(10, 10, 28, 0.9) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  border-radius: 20px;
+  padding: 1.75rem;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(0, 240, 255, 0.08) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.stat-card:hover::before {
+  opacity: 1;
+}
+
+.stat-card:hover {
+  transform: translateY(-8px);
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: var(--shadow-hover);
+}
+
+.stat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--cyber-cyan);
+}
+
+/* ============= Quick Action Buttons ============= */
+
+.quick-action-btn {
+  background: linear-gradient(145deg, rgba(12, 12, 28, 0.95) 0%, rgba(8, 8, 20, 0.9) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 16px;
+  padding: 1.5rem 1.25rem;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-action-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cyber-cyan), var(--cyber-magenta));
+  transform: scaleX(0);
+  transition: transform 0.4s ease;
+}
+
+.quick-action-btn:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 240, 255, 0.4);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 240, 255, 0.1);
+}
+
+.quick-action-btn:hover::after {
+  transform: scaleX(1);
+}
+
+/* ============= Search Input ============= */
+
+.search-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.search-input {
+  width: 100%;
+  padding: 1.125rem 1.5rem 1.125rem 3.5rem;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  background: rgba(10, 10, 25, 0.9);
+  color: #e8e8f0;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.15);
+}
+
+.search-icon {
+  position: absolute;
+  left: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #505080;
+  transition: color 0.3s ease;
+}
+
+.search-input-wrapper:focus-within .search-icon {
+  color: var(--cyber-cyan);
+}
+
+/* ============= Dark Theme (Default) ============= */
+
+/* Cyberpunk Grid Background - Dark Mode Only */
+[data-theme="dark"] body::before {
+  background: 
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(var(--grid-color) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* Ambient Glow Effects - Dark Mode Only */
+[data-theme="dark"] body::after {
+  background: 
+    radial-gradient(ellipse 80% 50% at 20% 30%, rgba(0, 240, 255, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 70%, rgba(255, 0, 255, 0.04) 0%, transparent 50%);
+}
+
+[data-theme="dark"] h1, 
+[data-theme="dark"] h2, 
+[data-theme="dark"] h3, 
+[data-theme="dark"] h4, 
+[data-theme="dark"] h5, 
+[data-theme="dark"] h6 {
+  color: var(--color-foreground);
+}
+
+/* Dark Mode Card Styles */
+[data-theme="dark"] .cyber-card {
+  background: linear-gradient(145deg, rgba(15, 15, 35, 0.95) 0%, rgba(10, 10, 30, 0.9) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  box-shadow: var(--shadow-cyber);
+}
+
+[data-theme="dark"] .cyber-card::before {
+  background: linear-gradient(90deg, transparent 0%, var(--cyber-cyan) 50%, transparent 100%);
+  opacity: 0.6;
+}
+
+[data-theme="dark"] .cyber-card:hover {
+  transform: translateY(-6px) rotateX(2deg);
+  box-shadow: var(--shadow-hover);
+  border-color: rgba(0, 240, 255, 0.3);
+}
+
+/* Dark Mode Input Styles */
+[data-theme="dark"] .cyber-input {
+  background: var(--cyber-input-bg);
+  border: 1px solid var(--cyber-input-border);
+  color: #e8e8f0;
+}
+
+[data-theme="dark"] .cyber-input:focus {
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 240, 255, 0.15), 0 0 30px rgba(0, 240, 255, 0.1);
+}
+
+[data-theme="dark"] .cyber-input::placeholder {
+  color: #505080;
+}
+
+/* Dark Mode Navigation */
+[data-theme="dark"] .nav-item {
+  color: #6b7280;
+}
+
+[data-theme="dark"] .nav-item:hover {
+  background: rgba(0, 240, 255, 0.08);
+  color: var(--cyber-cyan);
+}
+
+[data-theme="dark"] .nav-item.active {
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--cyber-cyan);
+  border-left: 3px solid var(--cyber-cyan);
+}
+
+/* Dark Mode Buttons */
+[data-theme="dark"] .btn-cyber {
+  background: linear-gradient(135deg, var(--cyber-cyan) 0%, var(--cyber-blue) 100%);
+  color: #000000;
+}
+
+[data-theme="dark"] .btn-cyber:hover {
+  box-shadow: 0 10px 30px rgba(0, 240, 255, 0.3);
+}
+
+[data-theme="dark"] .btn-outline-cyber {
+  border-color: rgba(0, 240, 255, 0.4);
+  color: var(--cyber-cyan);
+}
+
+[data-theme="dark"] .btn-outline-cyber:hover {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+}
+
+/* Dark Mode Stat Cards */
+[data-theme="dark"] .stat-card {
+  background: linear-gradient(145deg, rgba(15, 15, 35, 0.95) 0%, rgba(10, 10, 28, 0.9) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.12);
+}
+
+[data-theme="dark"] .stat-icon {
+  background: rgba(0, 240, 255, 0.1);
+  color: var(--cyber-cyan);
+}
+
+/* Dark Mode Quick Action Buttons */
+[data-theme="dark"] .quick-action-btn {
+  background: linear-gradient(145deg, rgba(12, 12, 28, 0.95) 0%, rgba(8, 8, 20, 0.9) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+}
+
+[data-theme="dark"] .quick-action-btn:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 240, 255, 0.4);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 240, 255, 0.1);
+}
+
+[data-theme="dark"] .quick-action-btn::after {
+  background: linear-gradient(90deg, var(--cyber-cyan), var(--cyber-magenta));
+}
+
+/* Dark Mode Glass Card */
+[data-theme="dark"] .glass-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-cyber);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Dark Mode Scrollbar */
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: rgba(15, 15, 35, 0.5);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 240, 255, 0.4) 0%, rgba(0, 240, 255, 0.2) 100%);
+}
+
+/* Dark Mode Status Dot */
+[data-theme="dark"] .status-dot.online {
+  background: var(--cyber-green);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+}
+
+/* Dark Mode Text Colors */
+[data-theme="dark"] .page-title {
+  color: var(--color-foreground);
+}
+
+[data-theme="dark"] .section-title {
+  color: var(--color-foreground);
+}
+
+[data-theme="dark"] .input-label {
+  color: #a0a0c0;
+}
+
+/* ============= Light Theme - Professional Enterprise Style ============= */
+/* NOTE: Theme variables are set via applyTheme() in useTheme.ts, not via CSS [data-theme="light"] block */
+/* This ensures immediate, synchronous theme switching without requiring page refresh */
+
+/* Smooth theme transition for all elements - EXCLUDING backdrop-filter to avoid rendering glitches */
+[data-theme="light"] *,
+[data-theme="dark"] * {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+}
+
+/* backdrop-filter 元素不参与过渡动画（防止渲染冲突），但保留背景色过渡 */
+[data-theme="light"] .glass-card,
+[data-theme="dark"] .glass-card,
+[data-theme="light"] .premium-card,
+[data-theme="dark"] .premium-card {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+}
+
+/* Smooth transition exceptions for animations only */
+[class*="animate-"] {
+  transition: none;
+}
+
+/* Light theme body with subtle gradient background */
+[data-theme="light"] body {
+  background: linear-gradient(180deg, #f8fafc 0%, #f0f4f8 100%);
+  color: #1e293b;
+}
+
+/* Enhanced grid pattern for light mode */
+[data-theme="light"] body::before {
+  background: 
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(var(--grid-color) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Subtle ambient glow for light mode */
+[data-theme="light"] body::after {
+  background: 
+    radial-gradient(ellipse 90% 60% at 15% 20%, rgba(59, 130, 246, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 85% 75%, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
+}
+
+[data-theme="light"] h1, 
+[data-theme="light"] h2, 
+[data-theme="light"] h3, 
+[data-theme="light"] h4, 
+[data-theme="light"] h5, 
+[data-theme="light"] h6 {
+  color: #1e293b;
+}
+
+/* ============= Light Theme Card Styles ============= */
+
+/* Enhanced Light Card with floating effect */
+[data-theme="light"] .cyber-card {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #cbd5e1;
+  box-shadow: var(--shadow-card);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] .cyber-card::before {
+  background: linear-gradient(90deg, transparent 0%, var(--cyber-blue) 50%, transparent 100%);
+  opacity: 0.5;
+}
+
+[data-theme="light"] .cyber-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: var(--shadow-card-hover), 0 0 40px rgba(59, 130, 246, 0.08);
+}
+
+/* Light Theme Card - with blue/purple shadow tint on hover */
+.light-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: var(--shadow-card);
+  transition: all 0.3s ease;
+}
+
+.light-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card-hover);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Light Theme Glass Card */
+.light-glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 16px;
+}
+
+/* Light Theme Badge/Tag - Enhanced contrast */
+[data-theme="light"] .badge,
+[data-theme="light"] [class*="badge"],
+[data-theme="light"] .tag {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+[data-theme="light"] .badge-success,
+[data-theme="light"] [class*="badge-success"] {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+[data-theme="light"] .badge-warning,
+[data-theme="light"] [class*="badge-warning"] {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+[data-theme="light"] .badge-error,
+[data-theme="light"] [class*="badge-error"] {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* Gradient Divider for Light Theme */
+[data-theme="light"] .gradient-divider {
+  height: 2px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(59, 130, 246, 0.3) 20%, 
+    rgba(139, 92, 246, 0.3) 50%, 
+    rgba(59, 130, 246, 0.3) 80%, 
+    transparent 100%
+  );
+}
+
+/* Light Theme Card Styles */
+[data-theme="light"] .cyber-card {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #cbd5e1;
+  box-shadow: var(--shadow-card);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] .cyber-card::before {
+  background: linear-gradient(90deg, transparent 0%, var(--cyber-blue) 50%, transparent 100%);
+  opacity: 0.5;
+}
+
+[data-theme="light"] .cyber-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: var(--shadow-card-hover), 0 0 40px rgba(59, 130, 246, 0.08);
+}
+
+[data-theme="light"] .cyber-border-animated > * {
+  background: #ffffff;
+}
+
+[data-theme="light"] .glass-card-static {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+}
+
+/* Light Mode Input Styles with animation */
+[data-theme="light"] .cyber-input {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+  transition: all 0.3s ease;
+}
+
+[data-theme="light"] .cyber-input:focus {
+  border-color: var(--cyber-blue);
+  box-shadow: var(--shadow-input-focus);
+  transform: translateY(-1px);
+}
+
+[data-theme="light"] .cyber-input::placeholder {
+  color: #94a3b8;
+}
+
+/* Input Focus Animation */
+[data-theme="light"] .cyber-input {
+  position: relative;
+}
+
+[data-theme="light"] .cyber-input::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+[data-theme="light"] .cyber-input:focus::after {
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Light Mode Navigation */
+[data-theme="light"] .nav-item {
+  color: #64748b;
+}
+
+[data-theme="light"] .nav-item:hover {
+  background: rgba(59, 130, 246, 0.05);
+  color: var(--cyber-blue);
+}
+
+[data-theme="light"] .nav-item.active {
+  background: var(--sidebar-active);
+  color: var(--sidebar-active-text);
+  border-left: 3px solid var(--cyber-blue);
+}
+
+/* Light Mode Search */
+[data-theme="light"] .search-input {
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
+}
+
+[data-theme="light"] .search-icon {
+  color: #94a3b8;
+}
+
+/* Light Mode Buttons */
+[data-theme="light"] .btn-cyber {
+  background: linear-gradient(135deg, var(--cyber-blue) 0%, #1d4ed8 100%);
+  color: #ffffff;
+}
+
+[data-theme="light"] .btn-cyber:hover {
+  box-shadow: 0 8px 25px rgba(37, 99, 235, 0.25);
+}
+
+[data-theme="light"] .btn-outline-cyber {
+  border-color: rgba(37, 99, 235, 0.3);
+  color: var(--cyber-blue);
+}
+
+[data-theme="light"] .btn-outline-cyber:hover {
+  background: rgba(37, 99, 235, 0.05);
+  border-color: var(--cyber-blue);
+}
+
+/* Light Mode Stat Cards */
+[data-theme="light"] .stat-card {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+}
+
+[data-theme="light"] .stat-icon {
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--cyber-blue);
+}
+
+/* Light Mode Quick Action Buttons */
+[data-theme="light"] .quick-action-btn {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+}
+
+[data-theme="light"] .quick-action-btn:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: var(--shadow-card-hover);
+}
+
+[data-theme="light"] .quick-action-btn::after {
+  background: linear-gradient(90deg, var(--cyber-blue), var(--cyber-magenta));
+}
+
+/* Light Mode Glass Card */
+[data-theme="light"] .glass-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Light Mode Scrollbar */
+[data-theme="light"] * {
+  scrollbar-color: rgba(59, 130, 246, 0.3) #f1f5f9;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.15) 100%);
+}
+
+/* Light Mode Status Dot */
+[data-theme="light"] .status-dot.online {
+  background: var(--status-online);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+/* Light Mode Text Colors */
+[data-theme="light"] .page-title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .section-title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .input-label {
+  color: #475569;
+}
+
+/* Light Mode Card - More specific override */
+[data-theme="light"] .rounded-xl.border,
+[data-theme="light"] [data-theme="light"] .rounded-xl {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Light mode Card override using specific pattern matching */
+:root[data-theme="light"] .premium-card,
+:root[data-theme="light"] [class*="premium-card"] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06) !important;
+}
+
+:root[data-theme="light"] .glass-card,
+:root[data-theme="light"] [class*="glass-card"] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Light mode shadow overrides for any card-like element */
+:root[data-theme="light"] [class*="shadow-lg"]:not([class*="border-transparent"]) {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+}
+
+:root[data-theme="light"] [class*="shadow-xl"] {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ============= Tabs Component Light Theme ============= */
+[data-theme="light"] [data-radix-tabs-collection] {
+  background: #ffffff;
+}
+
+/* ============= Responsive Design ============= */
+
+/* Large Screen Optimizations (>1440px) */
+@media (min-width: 1441px) {
+  .container {
+    max-width: 1400px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  
+  /* Sidebar fixed width on large screens */
+  .sidebar {
+    width: 260px !important;
+  }
+  
+  /* Stats grid optimization */
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+  }
+  
+  /* Chat panel full height on large screens */
+  .chat-container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+}
+
+/* Tablet Optimizations (768px - 1024px) */
+@media (max-width: 1024px) {
+  html {
+    font-size: 15px;
+  }
+  
+  .page-title {
+    font-size: 1.625rem;
+  }
+  
+  .section-title {
+    font-size: 1.125rem;
+  }
+  
+  .search-input {
+    padding: 1rem 1.25rem 1rem 3rem;
+    font-size: 0.9375rem;
+  }
+  
+  .stat-card {
+    padding: 1.5rem;
+    border-radius: 16px;
+  }
+  
+  .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+  
+  .quick-action-btn {
+    padding: 1.25rem 1rem;
+    border-radius: 14px;
+  }
+  
+  .nav-item {
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+  }
+  
+  .btn-cyber {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.8125rem;
+  }
+  
+  .cyber-input {
+    padding: 0.875rem 1rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Dashboard stat cards - 2 columns */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+  
+  /* Table horizontal scroll */
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  table {
+    min-width: 600px;
+  }
+  
+  /* Remove hover effects on touch devices */
+  .cyber-card:hover,
+  .stat-card:hover,
+  .quick-action-btn:hover {
+    transform: none;
+  }
+}
+
+/* Mobile Optimizations (480px and below) */
+@media (max-width: 480px) {
+  html {
+    font-size: 13px;
+  }
+  
+  .page-title {
+    font-size: 1.25rem;
+  }
+  
+  .stat-card {
+    padding: 1.25rem;
+    border-radius: 14px;
+  }
+  
+  /* Minimum touch target 44px */
+  button,
+  .nav-item,
+  a,
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Touch-friendly button padding */
+  .btn-cyber {
+    padding: 0.875rem 1.5rem;
+    min-height: 44px;
+  }
+  
+  .cyber-input {
+    padding: 0.875rem 1rem;
+    border-radius: 10px;
+    width: 100%;
+  }
+  
+  /* Full-width search on mobile */
+  .search-input-wrapper {
+    width: 100%;
+  }
+  
+  .search-input {
+    padding: 1rem 1.25rem 1rem 3rem;
+    width: 100%;
+    border-radius: 12px;
+  }
+  
+  /* Full-screen modal on mobile */
+  .modal-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    transform: none !important;
+  }
+  
+  /* Bottom action bar for mobile */
+  .bottom-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    padding: 1rem;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    border-top: 1px solid var(--color-border);
+  }
+  
+  /* Stats grid - single column on mobile */
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 0.875rem;
+  }
+  
+  /* Stat card compact layout */
+  .stat-card {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+  
+  .stat-content {
+    flex: 1;
+  }
+}
+
+/* Touch Device Optimization */
+@media (hover: none) and (pointer: coarse) {
+  .cyber-card:hover,
+  .stat-card:hover,
+  .quick-action-btn:hover,
+  .nav-item:hover {
+    transform: none;
+  }
+  
+  .cyber-card:active,
+  .stat-card:active,
+  .quick-action-btn:active {
+    transform: scale(0.98);
+    transition: transform 0.1s ease;
+  }
+  
+  /* Add ripple feedback for touch */
+  .touch-feedback {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .touch-feedback::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(0, 240, 255, 0.2);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.3s, height 0.3s;
+  }
+  
+  .touch-feedback:active::after {
+    width: 200%;
+    height: 200%;
+    opacity: 0;
+  }
+}
+
+/* ============= Accessibility ============= */
+
+/* Skip Link for keyboard navigation */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--cyber-cyan);
+  color: #000000;
+  padding: 8px 16px;
+  z-index: 10000;
+  transition: top 0.2s ease;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Screen Reader Only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Live Region for screen readers */
+.sr-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Focus Ring Enhancement */
+[data-theme="dark"] *:focus-visible {
+  outline: 2px solid var(--cyber-cyan);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(0, 240, 255, 0.15);
+}
+
+[data-theme="light"] *:focus-visible {
+  outline: 2px solid var(--cyber-blue);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--cyber-cyan);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .cyber-card,
+  .glass-card,
+  .btn-cyber {
+    border-width: 2px;
+  }
+  
+  *:focus-visible {
+    outline-width: 3px;
+  }
+}
+
+/* ============= Micro-interactions ============= */
+
+/* Ripple Effect for Buttons */
+.btn-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-ripple::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.6s ease, height 0.6s ease;
+}
+
+.btn-ripple:active::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Cyberpunk Spinner */
+.cyber-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid transparent;
+  border-top-color: var(--cyber-cyan);
+  border-right-color: var(--cyber-magenta);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.cyber-spinner::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 2px solid transparent;
+  border-bottom-color: var(--cyber-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite reverse;
+}
+
+/* Page Transition Animations */
+.page-enter {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.page-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.page-exit-active {
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Card Expand Animation */
+.card-expand {
+  transition: max-height 0.4s ease, opacity 0.3s ease;
+  overflow: hidden;
+}
+
+/* Loading Skeleton */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 240, 255, 0.05) 25%,
+    rgba(0, 240, 255, 0.1) 50%,
+    rgba(0, 240, 255, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+[data-theme="light"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.08) 25%,
+    rgba(59, 130, 246, 0.12) 50%,
+    rgba(59, 130, 246, 0.08) 75%
+  );
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ============= Print Styles ============= */
+
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+  
+  .cyber-card {
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+}
+
+/* Skip Link */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--cyber-cyan);
+  color: #000000;
+  padding: 8px 16px;
+  z-index: 10000;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Screen Reader Only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ============= Reduced Motion ============= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  /* 禁用新增的动画效果 */
+  .css-particles,
+  .scanline-overlay,
+  .holographic,
+  .neon-text,
+  .neon-text-alt,
+  .caustic-light,
+  .cyber-border-animated,
+  .animate-fade-in-scale,
+  .page-transition,
+  .typewriter,
+  .parallax-float,
+  .ambient-light,
+  .geo-decoration,
+  .glow-border {
+    animation: none !important;
+  }
+  
+  /* 禁用3D变换 */
+  .card-3d-tracked,
+  .cyber-card-3d,
+  .cyber-card-3d:hover {
+    transform: none !important;
+  }
+}
+
+/* ============= Print Styles ============= */
+
+/* ============= Print Styles ============= */
+
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+  
+  .cyber-card {
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+}

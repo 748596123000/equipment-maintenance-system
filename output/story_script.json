@@ -1,0 +1,59 @@
+{
+  "analysis": {
+    "subject": "A futuristic industrial maintenance AI assistant interface, holographic dashboard showing equipment diagrams, blue-cyan neon glowing UI elements, dark industrial background, robotic arm and sensor visualization, clean modern interface panels with data streams",
+    "scene": "High-tech industrial control room, dark environment with blue holographic displays, glowing circuit patterns, equipment maintenance workshop setting",
+    "style": "Cyberpunk technology style: dark blue and cyan color palette, neon glow effects, holographic UI elements, futuristic industrial atmosphere, cinematic lighting, detailed textures"
+  },
+  "story_script": [
+    {
+      "segment_id": 1,
+      "visual_desc": "Wide establishing shot of a high-tech industrial control room. A large holographic dashboard materializes with glowing blue interface elements. A futuristic AI assistant avatar (stylized robotic face with blue light eyes) appears at center. Title text emerges: 'Equipment Maintenance Knowledge System'. Cinematic lighting with blue neon glow. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 2,
+      "visual_desc": "Close-up of the holographic dashboard login screen. Blue-glowing text input fields and a fingerprint scanner animation. System boots up with cascading data streams and circuit patterns flowing across the screen. Cyberpunk technology style, glowing blue interface, 8k resolution."
+    },
+    {
+      "segment_id": 3,
+      "visual_desc": "Meditative aerial-style shot gliding into the main dashboard. Multiple holographic panels display: equipment status pie charts (blue and green), real-time sensor readings (pulsing cyan lines), AI recommendation cards sliding in from the right side. The same AI assistant avatar stands at top-left corner with a subtle glow. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 4,
+      "visual_desc": "Split-screen view of the multimodal knowledge retrieval interface. Left panel shows text search with holographic query input and flowing result cards. Right panel shows image-based search: a user drops a circuit diagram photo and the system instantly highlights matching knowledge entries. Glowing search icons animate. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 5,
+      "visual_desc": "POV-style camera moves closer to the AI intelligent Q&A interface. A user types: 'Motor overheating fault diagnosis' and presses Enter. The AI avatar's eyes pulse brighter (processing). Answer bubbles rise from the bottom with smooth animations. Source citation cards glow in cyan, showing traceability. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 6,
+      "visual_desc": "Cinematic shot of the standardized work instruction interface. A newly generated instruction document materializes like a holographic blueprint — step-by-step checklist cards stack vertically with safety level indicators glowing red/amber/green. Export button pulses. The AI avatar gestures to highlight a key safety step. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 7,
+      "visual_desc": "Wide shot of the knowledge accumulation and document upload interface. A file upload panel glows with cascading document icons. An admin审核 panel on the right shows pending documents with status badges. Knowledge graph visualization in the background displays interconnected nodes with glowing blue edges. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 8,
+      "visual_desc": "Close-up of the real-time notification system. Multiple notification cards fly in from the right side — bell icon pulses, message badges show unread counts. Sound wave animation rings out. Admin approval notification appears with a green checkmark badge. The same AI avatar gives a thumbs-up micro-animation. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 9,
+      "visual_desc": "Stylized cutaway shot of the system's technology architecture. A holographic layered diagram shows three tiers connected by glowing data streams: Frontend layer (React/TypeScript, floating icon), Backend layer (FastAPI/Python, central server icon with blue pulse), Database layer (ChromaDB vector DB + SQLite, glowing database icon). Data particles flow between layers. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 10,
+      "visual_desc": "Cinematic shot of the mobile-responsive interface demo. A smartphone wireframe in the center of the screen showing the same UI in compact form — dark theme, neon buttons, responsive layout adjusting smoothly. Touch gesture animations ripple across the screen. Side panel shows desktop comparison. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 11,
+      "visual_desc": "POV camera zooms in for a bold statistical summary shot. Bold glowing numbers rise on screen: '30%+ Efficiency Increase', '50%+ Error Reduction', '100%+ Knowledge Reuse'. Each number animates with pulsing glow rings. A circular progress chart fills with blue-to-cyan gradient. The AI avatar stands proud at corner. Cyberpunk technology style, 8k resolution."
+    },
+    {
+      "segment_id": 12,
+      "visual_desc": "Finale shot: futuristic panoramic view of a fully automated industrial maintenance workshop. Multiple holographic AI assistant avatars assist human technicians working on robotic equipment. Holographic knowledge graphs and AR maintenance overlays float above real machinery. The system logo glows at top center. 'Empowering Maintenance · Illuminating the Future' text fades in. The same AI avatar avatar gives a farewell wave, blue neon light slowly dims to end. Cyberpunk technology style, cinematic, 8k resolution."
+    }
+  ],
+  "input_mode": "text",
+  "style_used": "赛博朋克"
+}

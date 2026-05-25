@@ -1,0 +1,13 @@
+{
+  "requests": [
+    {
+      "prompt": "Cinematic shot of mobile-responsive interface demo. A smartphone wireframe in the center of the screen showing the same UI in compact form — dark theme, neon buttons, responsive layout adjusting smoothly. Touch gesture animations ripple across the screen. Side panel shows desktop comparison. Futuristic AI assistant avatar with glowing blue-cyan LED eyes at corner. Cyberpunk technology style, 8k resolution. same subject as reference image, stable appearance, preserve features, consistent character design, consistent lighting style",
+      "input_files": [
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\subject_reference.png",
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\frames\\frame_09.png"
+      ],
+      "aspect_ratio": "16:9",
+      "resolution": "2K"
+    }
+  ]
+}

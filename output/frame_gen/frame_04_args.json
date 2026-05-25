@@ -1,0 +1,13 @@
+{
+  "requests": [
+    {
+      "prompt": "Split-screen view of multimodal knowledge retrieval interface. Left panel shows text search with holographic query input and flowing result cards. Right panel shows image-based search: a user drops a circuit diagram photo and the system instantly highlights matching knowledge entries. Glowing search icons animate. Futuristic AI assistant avatar with glowing blue-cyan LED eyes. Cyberpunk technology style, 8k resolution. same subject as reference image, stable appearance, preserve features, consistent character design, consistent lighting style",
+      "input_files": [
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\subject_reference.png",
+        "D:\\Chinese team\\equipment-maintenance-system-v2-fixed\\.worktrees\\feature-redesign\\output\\frames\\frame_03.png"
+      ],
+      "aspect_ratio": "16:9",
+      "resolution": "2K"
+    }
+  ]
+}

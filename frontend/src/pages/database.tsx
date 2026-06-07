@@ -118,7 +118,7 @@ export default function DatabasePage() {
     setPreviewData(null)
     setPreviewLoading(true)
 
-    if (doc.file_type.toLowerCase().replace(".", "") === "pdf") {
+    if ((doc.file_type || '').toLowerCase().replace(".", "") === "pdf") {
       setPreviewLoading(false)
       return
     }
@@ -165,7 +165,7 @@ export default function DatabasePage() {
     }
   }, [downloadingIds])
 
-  const isPdfPreview = previewDoc?.file_type.toLowerCase().replace(".", "") === "pdf"
+  const isPdfPreview = (previewDoc?.file_type || '').toLowerCase().replace(".", "") === "pdf"
 
   return (
     <div className="space-y-6">

@@ -140,8 +140,8 @@ export function GlobalSearch({ onClose }: GlobalSearchProps) {
     
     const lowerQ = q.toLowerCase()
     return allItems.filter(item => 
-      item.title.toLowerCase().includes(lowerQ) || 
-      item.summary.toLowerCase().includes(lowerQ)
+      (item.title || '').toLowerCase().includes(lowerQ) || 
+      (item.summary || '').toLowerCase().includes(lowerQ)
     )
   }
 

@@ -11,13 +11,19 @@ FastAPI主入口模块
 
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+
+_local_packages = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".pip_packages")
+if os.path.isdir(_local_packages) and _local_packages not in sys.path:
+    sys.path.insert(0, _local_packages)
 
 if not os.environ.get("HF_ENDPOINT"):
     os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +42,26 @@ logger = logging.getLogger(__name__)
 def _auto_detect_backends():
     import requests as _req
 
+    db_config_loaded = False
+    try:
+        from app.models.database import get_database
+        db = get_database()
+        db_llm_model = db.get_config("llm_model")
+        db_llm_backend = db.get_config("llm_backend")
+        if db_llm_backend and db_llm_model:
+            settings.LLM_BACKEND = db_llm_backend
+            settings.LLM_MODEL = db_llm_model
+            db_llm_base_url = db.get_config("llm_api_base_url")
+            if db_llm_base_url:
+                settings.LLM_API_BASE_URL = db_llm_base_url
+            db_llm_api_key = db.get_config("llm_api_key")
+            if db_llm_api_key:
+                settings.LLM_API_KEY = db_llm_api_key
+            db_config_loaded = True
+            logger.info(f"从数据库加载LLM配置: {db_llm_backend}/{db_llm_model}")
+    except Exception:
+        pass
+
     llm_detected = None
 
     try:
@@ -47,13 +73,27 @@ def _auto_detect_backends():
         if resp.status_code == 200:
             models = resp.json().get("models", [])
             if models:
-                model_name = models[0]["name"]
-                settings.LLM_BACKEND = "ollama"
-                settings.LLM_MODEL = model_name
-                if not settings.LLM_API_BASE_URL:
-                    settings.LLM_API_BASE_URL = ollama_url
-                llm_detected = f"ollama/{model_name}"
-                logger.info(f"自动检测到 Ollama 本地模型: {model_name}")
+                if db_config_loaded:
+                    model_name = settings.LLM_MODEL
+                    llm_detected = f"ollama/{model_name}"
+                    logger.info(f"使用数据库配置的 Ollama 模型: {model_name}")
+                else:
+                    import psutil
+                    available_mem_gb = psutil.virtual_memory().available / (1024**3)
+                    suitable_model = None
+                    for m in models:
+                        name = m["name"].lower()
+                        size_gb = m.get("size", 0) / (1024**3)
+                        if size_gb < available_mem_gb * 0.6:
+                            suitable_model = m["name"]
+                            break
+                    model_name = suitable_model or models[0]["name"]
+                    settings.LLM_BACKEND = "ollama"
+                    settings.LLM_MODEL = model_name
+                    if not settings.LLM_API_BASE_URL:
+                        settings.LLM_API_BASE_URL = ollama_url
+                    llm_detected = f"ollama/{model_name}"
+                    logger.info(f"自动检测到 Ollama 本地模型: {model_name}")
     except Exception:
         pass
 
@@ -63,7 +103,18 @@ def _auto_detect_backends():
             if resp.status_code == 200:
                 models = resp.json().get("models", [])
                 if models:
-                    model_name = models[0]["name"]
+                    if db_config_loaded:
+                        model_name = settings.LLM_MODEL
+                    else:
+                        import psutil
+                        available_mem_gb = psutil.virtual_memory().available / (1024**3)
+                        suitable_model = None
+                        for m in models:
+                            size_gb = m.get("size", 0) / (1024**3)
+                            if size_gb < available_mem_gb * 0.6:
+                                suitable_model = m["name"]
+                                break
+                        model_name = suitable_model or models[0]["name"]
                     settings.LLM_BACKEND = "ollama"
                     settings.LLM_MODEL = model_name
                     settings.LLM_API_BASE_URL = "http://localhost:11434"
@@ -74,13 +125,6 @@ def _auto_detect_backends():
 
     if llm_detected:
         logger.info(f"LLM 后端: {llm_detected}")
-        from app.services.llm_service import get_llm_service
-        llm = get_llm_service()
-        llm.backend = settings.LLM_BACKEND
-        llm.model = settings.LLM_MODEL
-        llm.base_url = f"{settings.LLM_API_BASE_URL or 'http://localhost:11434'}/v1"
-        llm.api_key = settings.LLM_API_KEY or "ollama"
-        llm._reset_client()
         try:
             from app.models.database import get_database
             db = get_database()
@@ -195,14 +239,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.warning("Embedding API Key未配置，向量化功能不可用")
 
+    _auto_detect_backends()
+
     from app.services.llm_service import get_llm_service
     llm_service = get_llm_service()
     if llm_service.is_available():
         logger.info(f"大语言模型就绪: {settings.LLM_BACKEND}/{settings.LLM_MODEL}")
     else:
         logger.warning(f"当前LLM后端 {settings.LLM_BACKEND} 不可用")
-
-    _auto_detect_backends()
 
     if settings.VISION_BACKEND == "local" and settings.LOCAL_VISION_MODEL:
         import threading
@@ -357,7 +401,7 @@ def create_app() -> FastAPI:
     from app.api.chat import router as chat_router
     from app.api.guide import router as guide_router
     from app.api.case import router as case_router
-    from app.api.admin import router as admin_router
+    from app.api.admin import router as admin_router, public_router as admin_public_router
     from app.api.models import router as models_router
     from app.api.knowledge_graph import router as knowledge_graph_router
     from app.api.feedback import router as feedback_router
@@ -373,6 +417,7 @@ def create_app() -> FastAPI:
     app.include_router(guide_router, prefix="/api/v1/guide", tags=["作业指引"])
     app.include_router(case_router, prefix="/api/v1/case", tags=["检修案例"])
     app.include_router(admin_router, prefix="/api/v1/admin", tags=["系统管理"])
+    app.include_router(admin_public_router, prefix="/api/v1/admin", tags=["系统管理-公共"])
     app.include_router(models_router, prefix="/api/v1/models", tags=["模型管理"])
     app.include_router(knowledge_graph_router, prefix="/api/v1/knowledge-graph", tags=["知识图谱"])
     app.include_router(feedback_router, prefix="/api/v1/feedback", tags=["反馈标注"])

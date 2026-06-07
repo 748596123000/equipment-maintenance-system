@@ -11,6 +11,7 @@ interface SourceItem {
 
 interface SourceCardProps {
   sources: SourceItem[]
+  forceDark?: boolean
 }
 
 function truncate(text: string, maxLen: number): string {
@@ -18,20 +19,20 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + '...'
 }
 
-export function SourceCard({ sources }: SourceCardProps) {
+export function SourceCard({ sources, forceDark }: SourceCardProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
+  const effectiveLight = forceDark ? false : isLight
   const [open, setOpen] = useState(false)
 
   if (!sources || sources.length === 0) return null
 
-  // Theme-aware colors
-  const textMuted = isLight ? '#64748b' : '#6b7280'
-  const textPrimary = isLight ? '#1e293b' : '#e8e8f0'
-  const textSecondary = isLight ? '#475569' : '#a0a0c0'
-  const bgCard = isLight ? '#f8fafc' : 'rgba(15, 15, 35, 0.6)'
-  const borderColor = isLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.1)'
-  const badgeBg = isLight ? '#f1f5f9' : 'rgba(0, 240, 255, 0.15)'
+  const textMuted = effectiveLight ? '#64748b' : '#6b7280'
+  const textPrimary = effectiveLight ? '#1e293b' : '#e8e8f0'
+  const textSecondary = effectiveLight ? '#475569' : '#a0a0c0'
+  const bgCard = effectiveLight ? '#f8fafc' : 'rgba(15, 15, 35, 0.6)'
+  const borderColor = effectiveLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.1)'
+  const badgeBg = effectiveLight ? '#f1f5f9' : 'rgba(0, 240, 255, 0.15)'
 
   return (
     <div className="mt-2">
@@ -68,7 +69,7 @@ export function SourceCard({ sources }: SourceCardProps) {
                       className="text-xs"
                       style={{ 
                         background: badgeBg,
-                        color: isLight ? '#475569' : '#00f0ff'
+                        color: effectiveLight ? '#475569' : '#00f0ff'
                       }}
                     >
                       相似度: {(item.score * 100).toFixed(1)}%

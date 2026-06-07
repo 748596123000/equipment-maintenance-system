@@ -4,11 +4,13 @@ import { sanitizeChatContent } from '@/lib/sanitize'
 interface MessageBubbleProps {
   role: 'user' | 'assistant'
   content: string
+  forceDark?: boolean
 }
 
-export function MessageBubble({ role, content }: MessageBubbleProps) {
+export function MessageBubble({ role, content, forceDark }: MessageBubbleProps) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
+  const effectiveLight = forceDark ? false : isLight
 
   // Sanitize content for XSS protection
   // User messages are treated as plain text (never HTML)
@@ -21,8 +23,8 @@ export function MessageBubble({ role, content }: MessageBubbleProps) {
         <div 
           className="max-w-[75%] rounded-2xl rounded-br-sm px-4 py-2.5"
           style={{ 
-            background: isLight ? '#2563eb' : '#00f0ff',
-            color: isLight ? '#ffffff' : '#000000'
+            background: effectiveLight ? '#2563eb' : '#00f0ff',
+            color: effectiveLight ? '#ffffff' : '#000000'
           }}
         >
           {safeContent}
@@ -31,14 +33,13 @@ export function MessageBubble({ role, content }: MessageBubbleProps) {
     )
   }
 
-  // AI assistant message - preserve line breaks and basic formatting
   return (
     <div className="flex justify-start">
       <div 
         className="max-w-[75%] rounded-2xl rounded-bl-sm px-4 py-2.5"
         style={{ 
-          background: isLight ? '#f1f5f9' : 'rgba(15, 15, 35, 0.8)',
-          color: isLight ? '#1e293b' : '#e8e8f0'
+          background: effectiveLight ? '#f1f5f9' : 'rgba(15, 15, 35, 0.8)',
+          color: effectiveLight ? '#1e293b' : '#e8e8f0'
         }}
       >
         <span className="mr-1.5">🤖</span>

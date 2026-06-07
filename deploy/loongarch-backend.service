@@ -1,0 +1,33 @@
+[Unit]
+Description=设备检修知识检索与作业系统 - 后端API服务
+After=network.target
+Documentation=https://github.com/your-project
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/feature-redesign
+Environment="PATH=/opt/feature-redesign/venv/bin:/usr/local/bin:/usr/bin"
+Environment="CHROMA_DB_IMPL=duckdb+parquet"
+Environment="ANNOY_ENABLED=0"
+Environment="HF_ENDPOINT=https://hf-mirror.com"
+Environment="HF_HUB_OFFLINE=1"
+ExecStart=/opt/feature-redesign/venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=loongarch-backend
+
+# 安全限制
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

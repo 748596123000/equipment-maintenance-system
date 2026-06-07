@@ -56,6 +56,7 @@ class RAGEngine:
 5. 引用知识来源时，标注来源文档名称和页码
 6. 对于设备型号、参数等关键信息，确保准确引用
 7. 用通俗易懂的语言解释专业术语，帮助零基础用户理解
+8. 不要使用emoji表情符号和特殊Unicode符号（如☒☐■★✓等），使用纯文字表述（如"注意"、"重要"、"完成"等）
 
 当前提供的知识内容：
 {context}
@@ -331,6 +332,10 @@ class RAGEngine:
         try:
             answer = self.llm_service.chat(messages)
             return answer
+        except RuntimeError as e:
+            # LLM 服务层错误（网络/认证/限流），向上传递让 API 层处理
+            logger.error(f"LLM生成失败(RuntimeError): {e}")
+            raise
         except Exception as e:
             logger.error(f"LLM生成失败: {e}", exc_info=True)
             return f"抱歉，生成回答时出现错误: {str(e)}"

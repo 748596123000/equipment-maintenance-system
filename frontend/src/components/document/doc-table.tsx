@@ -44,7 +44,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 };
 
 function getFileTypeIcon(fileType: string): ReactNode {
-  const ext = fileType.toLowerCase().replace(".", "");
+  const ext = (fileType || '').toLowerCase().replace(".", "");
   if (ext === "pdf") return <FileText className="h-4 w-4 text-red-500" />;
   if (["docx", "doc", "txt", "md", "log"].includes(ext)) return <FileText className="h-4 w-4 text-blue-500" />;
   if (["xlsx", "xls", "csv"].includes(ext)) return <FileSpreadsheet className="h-4 w-4 text-green-500" />;

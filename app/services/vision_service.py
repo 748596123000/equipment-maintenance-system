@@ -1,19 +1,48 @@
 import base64
 import logging
 import os
+import platform
 import threading
 import traceback
 from typing import Optional
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+
 from app.config import settings
 from app.utils.gpu_utils import detect_gpu
 
 logger = logging.getLogger(__name__)
 
+
+def _get_vision_llama_url() -> str:
+    # 优先 VISION_API_BASE_URL（旧 llama_cpp 配置作为兜底）
+    return (settings.VISION_API_BASE_URL
+            or "http://127.0.0.1:8081")
+
+
+def _get_vision_llama_model() -> str:
+    return (settings.VISION_MODEL_NAME
+            or "Qwen2-VL-2B-Instruct-Q4_K_M")
+
+
+def _get_vision_vendor() -> str:
+    return (settings.VISION_VENDOR or "").lower() or (settings.VISION_BACKEND or "dashscope").lower()
+
+
+def _get_vision_api_key() -> str:
+    return (settings.VISION_API_KEY
+            or settings.OPENAI_COMPATIBLE_API_KEY
+            or settings.DASHSCOPE_API_KEY)
+
+
 _vision_instance = None
 _vision_lock = threading.Lock()
+
+# 架构检测
+_ARCH = platform.machine().lower()
+_IS_LOONGARCH = "loongarch" in _ARCH or "loong64" in _ARCH
 
 
 class VisionService:
@@ -24,7 +53,8 @@ class VisionService:
         self._initialized = False
         self._local_available = None
         self._init_error = None
-        self._backend = settings.VISION_BACKEND
+        # 优先用 VISION_VENDOR，兼容 VISION_BACKEND
+        self._backend = (settings.VISION_VENDOR or settings.VISION_BACKEND or "dashscope").lower()
         self._load_lock = threading.Lock()
         self._unavailable_logged = False
 
@@ -35,6 +65,11 @@ class VisionService:
         with self._load_lock:
             if self._local_available is not None:
                 return self._local_available
+
+            # LoongArch架构警告
+            if _IS_LOONGARCH:
+                logger.warning("LoongArch: 本地视觉模型需要手动安装torch/transformers并下载模型")
+                logger.warning("建议：使用DashScope API（配置DASHSCOPE_API_KEY）")
 
             gpu_info = detect_gpu()
             if gpu_info["available"]:
@@ -83,7 +118,10 @@ class VisionService:
                 self._local_available = False
                 self._init_error = f"依赖未安装: {e}"
                 logger.error(f"本地视觉模型依赖未安装: {e}")
-                logger.error("请安装: pip install transformers qwen-vl-utils accelerate torch")
+                if _IS_LOONGARCH:
+                    logger.error("LoongArch需从源码编译安装: pip install transformers qwen-vl-utils accelerate torch")
+                else:
+                    logger.error("请安装: pip install transformers qwen-vl-utils accelerate torch")
                 return False
             except Exception as e:
                 self._local_available = False
@@ -97,25 +135,25 @@ class VisionService:
         return bool(key) and key != "your_api_key_here"
 
     def _resolve_backend(self) -> str:
-        backend = self._backend
-        if backend == "auto":
+        # 优先使用独立的 VISION_VENDOR 字段，其次回退到 VISION_BACKEND 兼容旧配置
+        backend = (settings.VISION_VENDOR or "").lower() or (self._backend or "").lower()
+        if backend == "auto" or backend == "":
             if self._init_local_model():
                 return "local"
-            elif self._has_dashscope_key():
+            if self._has_dashscope_key() or _get_vision_api_key():
                 return "dashscope"
-            else:
-                return "unavailable"
-        elif backend == "local":
+            return "unavailable"
+        if backend == "local":
             if self._init_local_model():
                 return "local"
             if not self._unavailable_logged:
                 logger.warning(f"本地视觉模型不可用: {self._init_error or '未知错误'}，回退到 DashScope API")
                 self._unavailable_logged = True
-            if self._has_dashscope_key():
+            if self._has_dashscope_key() or _get_vision_api_key():
                 return "dashscope"
             return "unavailable"
-        elif backend == "dashscope":
-            if self._has_dashscope_key():
+        if backend == "dashscope":
+            if self._has_dashscope_key() or _get_vision_api_key():
                 return "dashscope"
             if self._init_local_model():
                 return "local"
@@ -147,6 +185,8 @@ class VisionService:
         else:
             if not self._unavailable_logged:
                 logger.warning("无可用的视觉模型后端，图片描述将被跳过")
+                if _IS_LOONGARCH:
+                    logger.warning("建议：配置 DASHSCOPE_API_KEY 使用DashScope API")
                 self._unavailable_logged = True
             return None
 
@@ -209,19 +249,26 @@ class VisionService:
             logger.error(f"本地视觉模型推理失败: {e}")
             return None
 
-    def _describe_dashscope(
-        self, image_bytes: bytes, ext: str, prompt: str
-    ) -> Optional[str]:
-        if not self._has_dashscope_key():
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_fixed(3),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+        reraise=True,
+    )
+    def _describe_dashscope(self, image_bytes: bytes, ext: str, prompt: str) -> Optional[str]:
+        # 优先 VISION_API_KEY，回退通用 DASHSCOPE_API_KEY
+        api_key = (_get_vision_api_key()
+                   or settings.DASHSCOPE_API_KEY)
+        if not api_key or api_key == "your_api_key_here":
             return None
 
         try:
             from openai import OpenAI
 
             client = OpenAI(
-                api_key=settings.DASHSCOPE_API_KEY,
+                api_key=api_key,
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                timeout=30.0,
+                timeout=60.0,
             )
 
             mime_map = {
@@ -234,7 +281,7 @@ class VisionService:
             base64_str = base64.b64encode(image_bytes).decode("utf-8")
 
             response = client.chat.completions.create(
-                model="qwen-vl-max",
+                model=settings.VISION_MODEL_NAME or "qwen-vl-max",
                 messages=[
                     {
                         "role": "user",

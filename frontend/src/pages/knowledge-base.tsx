@@ -89,7 +89,7 @@ interface CategoryGroup {
 }
 
 function getFileIcon(fileType: string) {
-  const ext = fileType.toLowerCase().replace(".", "")
+  const ext = (fileType || '').toLowerCase().replace(".", "")
   if (ext === "pdf") return <FileText className="h-4 w-4 text-red-500 shrink-0" />
   if (["docx", "doc", "txt", "md", "log"].includes(ext)) return <FileText className="h-4 w-4 text-blue-500 shrink-0" />
   if (["xlsx", "xls", "csv"].includes(ext)) return <FileSpreadsheet className="h-4 w-4 text-green-500 shrink-0" />
@@ -784,20 +784,40 @@ export default function KnowledgeBasePage() {
               ) : (
                 <ScrollArea className="h-[55vh]">
                   <div className="space-y-3 pr-4">
-                    {previewData.content.split("\n---\n").map((pageContent, idx) => (
-                      <Card key={idx}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge variant="secondary">
-                              第 {idx + 1} 部分
-                            </Badge>
-                          </div>
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {sanitizeText(pageContent)}
-                          </p>
-                        </CardContent>
-                      </Card>
-                    ))}
+                    {previewData.content.split("\n---\n").map((pageContent, idx) => {
+                      const pageImages = docImages.filter(img => img.page_number === idx + 1)
+                      return (
+                        <Card key={idx}>
+                          <CardContent className="p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="secondary">
+                                第 {idx + 1} 部分
+                              </Badge>
+                              {pageImages.length > 0 && (
+                                <Badge variant="outline" className="text-xs">
+                                  {pageImages.length} 张图片
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                              {sanitizeText(pageContent)}
+                            </p>
+                            {pageImages.length > 0 && (
+                              <div className="mt-3 grid grid-cols-2 gap-2">
+                                {pageImages.map(img => (
+                                  <div key={img.id} className="rounded-md overflow-hidden border" style={{ borderColor: isLight ? '#e2e8f0' : '#1e293b' }}>
+                                    <img src={img.image_url} alt={`第${img.page_number}页图片${img.image_index + 1}`} className="w-full h-auto" />
+                                    {img.ai_description && (
+                                      <p className="text-xs p-2" style={{ background: isLight ? '#f8fafc' : '#0f172a', color: isLight ? '#475569' : '#94a3b8' }}>{img.ai_description}</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 </ScrollArea>
               )
@@ -847,7 +867,7 @@ export default function KnowledgeBasePage() {
                           {img.ai_description ? (
                             <div>
                               <p className="text-xs font-medium text-muted-foreground mb-1">AI 视觉分析结果</p>
-                              <p className="text-sm leading-relaxed bg-slate-50 dark:bg-slate-900 rounded-md p-3 break-words">
+                              <p className="text-sm leading-relaxed rounded-md p-3 break-words border" style={{ background: isLight ? '#f8fafc' : '#0f172a', borderColor: isLight ? '#e2e8f0' : '#1e293b', color: isLight ? '#1e293b' : '#e2e8f0' }}>
                                 {sanitizeText(img.ai_description)}
                               </p>
                             </div>

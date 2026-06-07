@@ -32,10 +32,41 @@ from app.models.database import get_database
 from app.utils.helpers import calculate_pagination
 
 logger = logging.getLogger(__name__)
+
+# system-info 接口不需要管理员认证（启动脚本需要无认证调用）
+public_router = APIRouter()
 router = APIRouter(dependencies=[Depends(require_admin)])
 
 CONFIG_FIELD_MAP = {
+    # 通用 API 密钥（厂商级）
     "dashscope_api_key": ("DASHSCOPE_API_KEY", str, True),
+    "minimax_api_key": ("MINIMAX_API_KEY", str, True),
+    "deepseek_api_key": ("DEEPSEEK_API_KEY", str, True),
+    "zhipu_api_key": ("ZHIPU_API_KEY", str, True),
+    "baichuan_api_key": ("BAICHUAN_API_KEY", str, True),
+    "moonshot_api_key": ("MOONSHOT_API_KEY", str, True),
+    "siliconflow_api_key": ("SILICONFLOW_API_KEY", str, True),
+    "openai_compatible_api_key": ("OPENAI_COMPATIBLE_API_KEY", str, True),
+
+    # LLM 独立配置
+    "llm_vendor": ("LLM_VENDOR", str, False),
+    "llm_api_key_override": ("LLM_API_KEY_OVERRIDE", str, True),
+    "llm_api_base_url_override": ("LLM_API_BASE_URL_OVERRIDE", str, False),
+    "llm_model_override": ("LLM_MODEL_OVERRIDE", str, False),
+
+    # Embedding 独立配置
+    "embedding_vendor": ("EMBEDDING_VENDOR", str, False),
+    "embedding_api_key": ("EMBEDDING_API_KEY", str, True),
+    "embedding_api_base_url": ("EMBEDDING_API_BASE_URL", str, False),
+    "embedding_model_name": ("EMBEDDING_MODEL_NAME", str, False),
+
+    # Vision 独立配置
+    "vision_vendor": ("VISION_VENDOR", str, False),
+    "vision_api_key": ("VISION_API_KEY", str, True),
+    "vision_api_base_url": ("VISION_API_BASE_URL", str, False),
+    "vision_model_name": ("VISION_MODEL_NAME", str, False),
+
+    # 旧 LLM 配置（兼容）
     "llm_backend": ("LLM_BACKEND", str, False),
     "llm_model": ("LLM_MODEL", str, False),
     "llm_temperature": ("LLM_TEMPERATURE", float, False),
@@ -43,18 +74,28 @@ CONFIG_FIELD_MAP = {
     "llm_api_base_url": ("LLM_API_BASE_URL", str, False),
     "llm_api_key": ("LLM_API_KEY", str, True),
     "embedding_model": ("EMBEDDING_MODEL", str, False),
-    "chunk_size": ("CHUNK_SIZE", int, False),
-    "chunk_overlap": ("CHUNK_OVERLAP", int, False),
-    "top_k_results": ("TOP_K_RESULTS", int, False),
-    "retriever_score_threshold": ("RETRIEVER_SCORE_THRESHOLD", float, False),
+
+    # OCR / 视觉后端
     "ocr_backend": ("OCR_BACKEND", str, False),
     "ocr_use_gpu": ("OCR_USE_GPU", bool, False),
     "ocr_language": ("OCR_LANGUAGE", str, False),
     "vision_backend": ("VISION_BACKEND", str, False),
     "local_vision_model": ("LOCAL_VISION_MODEL", str, False),
+
+    # 系统参数
+    "chunk_size": ("CHUNK_SIZE", int, False),
+    "chunk_overlap": ("CHUNK_OVERLAP", int, False),
+    "top_k_results": ("TOP_K_RESULTS", int, False),
+    "retriever_score_threshold": ("RETRIEVER_SCORE_THRESHOLD", float, False),
+    "access_token_expire_hours": ("ACCESS_TOKEN_EXPIRE_HOURS", int, False),
 }
 
-SECRET_FIELDS = {"dashscope_api_key", "llm_api_key"}
+SECRET_FIELDS = {
+    "dashscope_api_key", "llm_api_key",
+    "minimax_api_key", "deepseek_api_key", "zhipu_api_key",
+    "baichuan_api_key", "moonshot_api_key", "siliconflow_api_key",
+    "openai_compatible_api_key",
+}
 
 
 class UserCreateRequest(BaseModel):
@@ -67,6 +108,13 @@ class UserCreateRequest(BaseModel):
 
 class ConfigUpdateRequest(BaseModel):
     dashscope_api_key: Optional[str] = Field(default=None, description="DashScope API密钥")
+    minimax_api_key: Optional[str] = Field(default=None, description="MiniMax API密钥")
+    deepseek_api_key: Optional[str] = Field(default=None, description="DeepSeek API密钥")
+    zhipu_api_key: Optional[str] = Field(default=None, description="智谱AI API密钥")
+    baichuan_api_key: Optional[str] = Field(default=None, description="百川API密钥")
+    moonshot_api_key: Optional[str] = Field(default=None, description="Moonshot API密钥")
+    siliconflow_api_key: Optional[str] = Field(default=None, description="SiliconFlow API密钥")
+    openai_compatible_api_key: Optional[str] = Field(default=None, description="OpenAI兼容API密钥")
     llm_backend: Optional[str] = Field(default=None, description="LLM后端类型")
     llm_model: Optional[str] = Field(default=None, description="大模型名称")
     llm_temperature: Optional[float] = Field(default=None, description="生成温度")
@@ -91,6 +139,132 @@ class TestConnectionRequest(BaseModel):
     api_key: Optional[str] = Field(default=None, description="API密钥(可选，默认用当前配置)")
     base_url: Optional[str] = Field(default=None, description="API基础URL(可选，默认用当前配置)")
     model: Optional[str] = Field(default=None, description="模型名称(可选，默认用当前配置)")
+
+
+@public_router.get("/system-info", summary="获取系统架构与运行环境信息")
+async def get_system_info():
+    """
+    暴露当前后端进程所在的 CPU 架构与平台信息，
+    前端据此决定是否显示 LoongArch 兼容提示、是否推荐某些后端。
+    """
+    import platform
+    import sys
+
+    raw_arch = platform.machine() or ""
+    arch_norm = raw_arch.lower()
+    is_loongarch = ("loongarch" in arch_norm) or ("loong64" in arch_norm) or (arch_norm == "loongarch64")
+
+    # 兼容项矩阵（与前端 LLM_BACKENDS/OCR_BACKENDS 对齐）
+    compat = {
+        "llm_backends": {
+            "dashscope": True,
+            "minimax": True,
+            "deepseek": True,
+            "zhipu": True,
+            "baichuan": True,
+            "moonshot": True,
+            "siliconflow": True,
+            # Ollama 服务端是 x86/ARM 二进制，LoongArch 上需用 x86 兼容层或部署在其他机器
+            "ollama": not is_loongarch,
+            # llama.cpp 可从源码编译，LoongArch 上可运行
+            "llama_cpp": True,
+            "openai_compatible": True,
+        },
+        "ocr_backends": {
+            "auto": True,
+            "rapidocr": True,
+            # PaddlePaddle / PaddleOCR 在 LoongArch 上没有官方预编译 wheel
+            "paddleocr": not is_loongarch,
+            "api": True,
+            "none": True,
+        },
+        "vision_backends": {
+            "auto": True,
+            "dashscope": True,
+            # 本地视觉模型在 LoongArch 上依赖 llama.cpp（需自行编译），无 PyTorch GPU
+            "local": not is_loongarch,
+        },
+    }
+
+    # 推荐项（LoongArch 上推荐纯 API 路线）
+    if is_loongarch:
+        recommended = {
+            "llm_backend": "dashscope",
+            "ocr_backend": "rapidocr",
+            "vision_backend": "dashscope",
+            "embedding_backend": "dashscope",
+        }
+    else:
+        recommended = {
+            "llm_backend": "dashscope",
+            "ocr_backend": "auto",
+            "vision_backend": "auto",
+            "embedding_backend": "dashscope",
+        }
+
+    return {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "platform": platform.platform(),
+            "system": platform.system(),
+            "machine": raw_arch,
+            "architecture": arch_norm,
+            "is_loongarch": is_loongarch,
+            "python_version": sys.version.split()[0],
+            "compatibility": compat,
+            "recommended": recommended,
+            "hints": {
+                "loongarch": [
+                    "LLM / Embedding / 视觉：推荐使用 DashScope API（云端）",
+                    "若已部署 llama.cpp + GGUF：启动 llama-server 后用'OpenAI 兼容 API'指向 http://localhost:11434/v1 即可作为本地 LLM",
+                    "OCR：推荐 RapidOCR（CPU）或 DashScope API",
+                    "本地视觉模型（Qwen2-VL 等）需 llama.cpp + GGUF（多模态），并自行编译；当前内置服务为文本 LLM",
+                    "Ollama 服务端为 x86 预编译二进制，本机 LoongArch 无法直接运行；llama-server 是 LoongArch 本地推理的等价方案",
+                    "PaddleOCR 依赖 paddlepaddle-gpu，LoongArch 上无官方预编译",
+                ]
+            },
+            "llama_cpp": {
+                "available": _check_llama_cpp_binary(),
+                "default_url": "http://localhost:11434/v1",
+                "alternate_url": "http://localhost:11435/v1",
+                "hint": "已检测 llama.cpp（llama-server）。可启动后用 OpenAI 兼容 API 接入。",
+            },
+        },
+    }
+
+
+def _check_llama_cpp_binary() -> bool:
+    """检查系统中是否存在 llama-server / llama-cli 可执行文件。"""
+    import shutil
+    for name in ("llama-server", "llama-cli", "llama_cpp_main"):
+        if shutil.which(name):
+            return True
+    # 检查常见路径（与启动脚本对齐）
+    for path in (
+        "/usr/bin/llama-server",
+        "/usr/local/bin/llama-server",
+        "/usr/bin/llama-cli",
+        "/usr/local/bin/llama-cli",
+        "/home/vmuser/llama.cpp/llama-server",
+        "/home/vmuser/llama.cpp/build/bin/llama-server",
+        "/home/vmuser/llama.cpp/llama-cli",
+        "/home/vmuser/llama.cpp/build/bin/llama-cli",
+    ):
+        if os.path.exists(path):
+            return True
+    # 尝试 find 搜索（覆盖更多位置）
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["find", "/home/vmuser", "-name", "llama-server", "-type", "f"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.stdout.strip():
+            return True
+    except Exception:
+        pass
+    return False
 
 
 @router.get("/stats", summary="获取系统统计信息")
@@ -301,7 +475,10 @@ async def update_system_config(request: ConfigUpdateRequest):
         db.set_config(field_name, str(value))
 
         if field_name in ("llm_backend", "llm_model", "llm_temperature", "llm_max_tokens",
-                          "llm_api_base_url", "llm_api_key", "dashscope_api_key"):
+                          "llm_api_base_url", "llm_api_key", "dashscope_api_key",
+                          "minimax_api_key", "deepseek_api_key", "zhipu_api_key",
+                          "baichuan_api_key", "moonshot_api_key", "siliconflow_api_key",
+                          "openai_compatible_api_key"):
             need_reset_llm = True
         if field_name in ("dashscope_api_key",):
             need_reset_embedding = True
@@ -353,12 +530,24 @@ async def test_connection(request: TestConnectionRequest):
 
     if service == "llm":
         backend = request.backend or settings.LLM_BACKEND
-        api_key = request.api_key or (settings.DASHSCOPE_API_KEY if backend == "dashscope" else settings.LLM_API_KEY)
+        # 按 backend 类型选择正确的厂商 API Key
+        _vendor_key_map = {
+            "dashscope": settings.DASHSCOPE_API_KEY,
+            "minimax": settings.MINIMAX_API_KEY,
+            "deepseek": settings.DEEPSEEK_API_KEY,
+            "zhipu": settings.ZHIPU_API_KEY,
+            "baichuan": settings.BAICHUAN_API_KEY,
+            "moonshot": settings.MOONSHOT_API_KEY,
+            "siliconflow": settings.SILICONFLOW_API_KEY,
+            "openai_compatible": settings.OPENAI_COMPATIBLE_API_KEY,
+        }
+        _fallback_key = _vendor_key_map.get(backend, settings.LLM_API_KEY) or settings.LLM_API_KEY
+        api_key = request.api_key or _fallback_key
         base_url = request.base_url or settings.LLM_API_BASE_URL
         model = request.model or settings.LLM_MODEL
 
         try:
-            from app.services.llm_service import LLMService, DASHSCOPE_BASE_URL, OLLAMA_DEFAULT_URL, MINIMAX_BASE_URL, DEEPSEEK_BASE_URL, ZHIPU_BASE_URL, BAICHUAN_BASE_URL, MOONSHOT_BASE_URL, SILICONFLOW_BASE_URL, LLM_PROVIDER_INFO
+            from app.services.llm_service import LLMService, DASHSCOPE_BASE_URL, OLLAMA_DEFAULT_URL, LLAMA_CPP_DEFAULT_URL, MINIMAX_BASE_URL, DEEPSEEK_BASE_URL, ZHIPU_BASE_URL, BAICHUAN_BASE_URL, MOONSHOT_BASE_URL, SILICONFLOW_BASE_URL, LLM_PROVIDER_INFO
             start = time.time()
 
             if backend == "dashscope":
@@ -391,6 +580,10 @@ async def test_connection(request: TestConnectionRequest):
             elif backend == "siliconflow":
                 svc = LLMService(api_key=api_key, model=model, backend="siliconflow")
                 svc.chat([{"role": "user", "content": "hi"}], max_tokens=5)
+            elif backend == "llama_cpp":
+                url = base_url or f"{LLAMA_CPP_DEFAULT_URL}"
+                svc = LLMService(api_key=api_key or "no-key", model=model, backend="llama_cpp", base_url=url)
+                svc.chat([{"role": "user", "content": "hi"}], max_tokens=5)
 
             elapsed = (time.time() - start) * 1000
             result["success"] = True
@@ -400,75 +593,73 @@ async def test_connection(request: TestConnectionRequest):
             result["message"] = f"连接失败: {str(e)[:200]}"
 
     elif service == "embedding":
-        api_key = request.api_key or settings.DASHSCOPE_API_KEY
-        model = request.model or settings.EMBEDDING_MODEL
+        vendor = (request.backend or settings.EMBEDDING_VENDOR or "dashscope").lower()
+        api_key = (request.api_key or settings.EMBEDDING_API_KEY
+                   or settings.OPENAI_COMPATIBLE_API_KEY
+                   or settings.DASHSCOPE_API_KEY)
+        base_url = request.base_url or settings.EMBEDDING_API_BASE_URL
+        model = request.model or settings.EMBEDDING_MODEL_NAME or settings.EMBEDDING_MODEL
 
-        if not api_key or api_key == "your_api_key_here":
-            result["message"] = "DashScope API Key 未配置"
-        else:
-            try:
-                import dashscope
-                from dashscope import TextEmbedding
-                dashscope.api_key = api_key
+        try:
+            from app.services.embedding_service import get_embedding_service
+            svc = get_embedding_service()
+            start = time.time()
 
-                start = time.time()
-                resp = TextEmbedding.call(model=model, input="test")
-                elapsed = (time.time() - start) * 1000
+            if vendor == "dashscope":
+                if not api_key:
+                    result["message"] = "DashScope API Key 未配置"
+                    return result
+                # 使用 service 内部方法
+                vec = svc.embed_text("test")
+            elif vendor in ("openai_compatible", "llama_cpp", "ollama"):
+                if not base_url:
+                    result["message"] = f"{vendor} 需要配置 Base URL"
+                    return result
+                if not model:
+                    result["message"] = f"{vendor} 需要配置模型名"
+                    return result
+                vec = svc.embed_text("test")
+            else:
+                result["message"] = f"不支持的 Embedding 厂商: {vendor}"
+                return result
 
-                if resp.status_code == 200:
-                    dim = len(resp.output['embeddings'][0]['embedding'])
-                    result["success"] = True
-                    result["message"] = f"连接成功，模型: {model}，维度: {dim}，延迟: {elapsed:.0f}ms"
-                    result["latency_ms"] = round(elapsed, 1)
-                else:
-                    result["message"] = f"API返回错误 (status={resp.status_code})"
-            except Exception as e:
-                result["message"] = f"连接失败: {str(e)[:200]}"
+            elapsed = (time.time() - start) * 1000
+            result["success"] = True
+            result["message"] = f"连接成功，厂商: {vendor}，模型: {model}，维度: {len(vec)}，延迟: {elapsed:.0f}ms"
+            result["latency_ms"] = round(elapsed, 1)
+        except Exception as e:
+            result["message"] = f"连接失败: {str(e)[:200]}"
 
     elif service == "vision":
-        backend = request.backend or settings.VISION_BACKEND
-        api_key = request.api_key or settings.DASHSCOPE_API_KEY
+        vendor = (request.backend or settings.VISION_VENDOR or "dashscope").lower()
+        api_key = (request.api_key or settings.VISION_API_KEY
+                   or settings.OPENAI_COMPATIBLE_API_KEY
+                   or settings.DASHSCOPE_API_KEY)
+        base_url = request.base_url or settings.VISION_API_BASE_URL
+        model = request.model or settings.VISION_MODEL_NAME
 
-        if backend == "dashscope" or (backend == "auto" and api_key):
-            if not api_key or api_key == "your_api_key_here":
-                result["message"] = "DashScope API Key 未配置"
+        try:
+            from app.services.vision_service import get_vision_service
+            svc = get_vision_service()
+            start = time.time()
+
+            # 用一张 1x1 红色 PNG 测
+            import base64
+            tiny_png = base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP8z8DwHwAFBQIA"
+                "X8jx0gAAAABJRU5ErkJggg=="
+            )
+            desc = svc.describe_image(tiny_png, "png", "hi")
+
+            elapsed = (time.time() - start) * 1000
+            if desc is not None:
+                result["success"] = True
+                result["message"] = f"连接成功，厂商: {vendor}，模型: {model}，延迟: {elapsed:.0f}ms"
+                result["latency_ms"] = round(elapsed, 1)
             else:
-                try:
-                    import dashscope
-                    from dashscope import MultiModalConversation
-
-                    dashscope.api_key = api_key
-                    start = time.time()
-                    resp = MultiModalConversation.call(
-                        model="qwen-vl-plus",
-                        messages=[{
-                            "role": "user",
-                            "content": [{"text": "hi"}]
-                        }],
-                    )
-                    elapsed = (time.time() - start) * 1000
-
-                    if resp.status_code == 200:
-                        result["success"] = True
-                        result["message"] = f"DashScope视觉API连接成功，延迟: {elapsed:.0f}ms"
-                        result["latency_ms"] = round(elapsed, 1)
-                    else:
-                        result["message"] = f"API返回错误 (status={resp.status_code})"
-                except Exception as e:
-                    result["message"] = f"连接失败: {str(e)[:200]}"
-        elif backend == "local":
-            try:
-                from app.services.vision_service import get_vision_service
-                vision_svc = get_vision_service()
-                if vision_svc.is_local_available:
-                    result["success"] = True
-                    result["message"] = f"本地视觉模型可用: {settings.LOCAL_VISION_MODEL}"
-                else:
-                    result["message"] = f"本地视觉模型不可用: {settings.LOCAL_VISION_MODEL}"
-            except Exception as e:
-                result["message"] = f"检测失败: {str(e)[:200]}"
-        else:
-            result["message"] = "无可用的视觉模型后端"
+                result["message"] = f"{vendor} 视觉服务无响应（后端: {svc.current_backend}）"
+        except Exception as e:
+            result["message"] = f"连接失败: {str(e)[:200]}"
 
     elif service == "ocr":
         try:
@@ -517,6 +708,7 @@ async def get_all_services_status():
         emb = get_embedding_service()
         services["embedding"] = {
             "available": emb.is_available(),
+            "backend": emb.backend,
             "model": settings.EMBEDDING_MODEL,
         }
     except Exception as e:
@@ -586,7 +778,7 @@ async def rebuild_index():
         raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
 
 
-@router.get("/health", summary="健康检查")
+@public_router.get("/health", summary="健康检查")
 async def health_check():
     health_info = {
         "status": "healthy",
@@ -633,6 +825,7 @@ async def health_check():
         available = embedding_service.is_available()
         health_info["components"]["embedding"] = {
             "status": "healthy" if available else "unavailable",
+            "backend": embedding_service.backend,
             "model": settings.EMBEDDING_MODEL,
         }
         if not available:
@@ -692,6 +885,90 @@ async def get_gpu_status():
             "vision": vision_status,
         },
     }
+
+
+@router.get("/gpu-diagnostics", summary="获取GPU详细诊断信息")
+async def get_gpu_diagnostics():
+    from app.utils.gpu_utils import get_gpu_info
+    gpu_info = get_gpu_info()
+    return {
+        "code": 200,
+        "message": "查询成功",
+        "data": gpu_info,
+    }
+
+
+@router.post("/install-cuda-deps", summary="安装CUDA版依赖")
+async def install_cuda_deps():
+    import subprocess
+    import sys
+    import threading
+
+    task_id = "cuda_deps_install"
+    install_status_file = os.path.join(settings.DATA_DIR, ".install_status")
+
+    if os.path.exists(install_status_file):
+        with open(install_status_file, "r") as f:
+            status = f.read().strip()
+        if status == "installing":
+            return {"code": 200, "message": "安装正在进行中", "data": {"status": "installing"}}
+
+    with open(install_status_file, "w") as f:
+        f.write("installing")
+
+    def _install_thread():
+        try:
+            with open(install_status_file, "w") as f:
+                f.write("uninstalling_cpu_torch")
+
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "uninstall", "torch", "torchvision", "-y"],
+                capture_output=True, text=True, timeout=120,
+            )
+
+            with open(install_status_file, "w") as f:
+                f.write("installing_cuda_torch")
+
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "torch", "torchvision",
+                 "--index-url", "https://download.pytorch.org/whl/cu128"],
+                capture_output=True, text=True, timeout=600,
+            )
+
+            if result.returncode != 0:
+                with open(install_status_file, "w") as f:
+                    f.write(f"failed:torch:{result.stderr[-200:]}")
+                return
+
+            with open(install_status_file, "w") as f:
+                f.write("completed")
+        except Exception as e:
+            with open(install_status_file, "w") as f:
+                f.write(f"failed:{str(e)[:200]}")
+
+    thread = threading.Thread(target=_install_thread, daemon=True)
+    thread.start()
+
+    return {"code": 200, "message": "CUDA依赖安装已启动", "data": {"status": "installing"}}
+
+
+@router.get("/install-cuda-deps/status", summary="查询CUDA依赖安装状态")
+async def get_cuda_install_status():
+    install_status_file = os.path.join(settings.DATA_DIR, ".install_status")
+
+    if not os.path.exists(install_status_file):
+        return {"code": 200, "message": "无安装任务", "data": {"status": "none"}}
+
+    with open(install_status_file, "r") as f:
+        status = f.read().strip()
+
+    if status == "completed":
+        os.remove(install_status_file)
+        from app.utils.gpu_utils import _gpu_info_cache, _gpu_cache_time
+        global _gpu_info_cache
+        _gpu_info_cache = None
+
+    return {"code": 200, "message": "查询成功", "data": {"status": status}}
 
 
 @router.post("/gpu-cache/clear", summary="清理GPU缓存")
@@ -766,6 +1043,16 @@ async def get_llm_models(
         ollama_available = LLMService.check_ollama_available()
         ollama_models = LLMService.list_ollama_models() if ollama_available else []
         models = [{"id": m["name"], "name": m["name"]} for m in ollama_models]
+    elif query_backend == "llama_cpp":
+        llama_available = LLMService.check_llama_cpp_available()
+        llama_models = LLMService.list_llama_cpp_models() if llama_available else []
+        models = [{"id": m["name"], "name": m["name"]} for m in llama_models]
+        if not models:
+            models = [
+                {"id": "qwen2.5-7b-instruct-q4_k_m", "name": "Qwen2.5-7B-Instruct-Q4_K_M（推荐）"},
+                {"id": "qwen2.5-3b-instruct-q4_k_m", "name": "Qwen2.5-3B-Instruct-Q4_K_M（轻量）"},
+                {"id": "qwen2.5-14b-instruct-q4_k_m", "name": "Qwen2.5-14B-Instruct-Q4_K_M（高性能）"},
+            ]
     elif query_backend == "openai_compatible":
         url = base_url or settings.LLM_API_BASE_URL
         key = api_key or settings.LLM_API_KEY
@@ -814,6 +1101,11 @@ async def get_llm_status():
         status_info["available"] = ollama_available
         status_info["connection"] = "ok" if ollama_available else "unreachable"
         status_info["url"] = settings.LLM_API_BASE_URL or OLLAMA_DEFAULT_URL
+    elif backend == "llama_cpp":
+        llama_available = LLMService.check_llama_cpp_available()
+        status_info["available"] = llama_available
+        status_info["connection"] = "ok" if llama_available else "unreachable"
+        status_info["url"] = settings.LLM_API_BASE_URL or "http://localhost:11434/v1"
     elif backend == "openai_compatible":
         url = settings.LLM_API_BASE_URL
         if url:

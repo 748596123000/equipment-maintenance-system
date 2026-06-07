@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+// FORCE_REBUILD: llama_cpp support added
 import { useAuthStore } from '@/stores/auth-store'
 import { useTheme } from '@/hooks/useTheme'
 import { api } from '@/lib/api'
@@ -33,6 +34,7 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Loader2,
   Cpu,
   Eye,
@@ -58,6 +60,13 @@ import {
 
 interface SystemConfig {
   dashscope_api_key: string
+  minimax_api_key: string
+  deepseek_api_key: string
+  zhipu_api_key: string
+  baichuan_api_key: string
+  moonshot_api_key: string
+  siliconflow_api_key: string
+  openai_compatible_api_key: string
   llm_backend: string
   llm_model: string
   llm_api_base_url: string
@@ -78,6 +87,51 @@ interface SystemConfig {
   ocr_language: string
   vision_backend: string
   local_vision_model: string
+  // ====== 新增 per-service 独立厂商配置 ======
+  // LLM
+  llm_vendor: string
+  llm_api_key_override: string
+  llm_api_base_url_override: string
+  llm_model_override: string
+  // Embedding
+  embedding_vendor: string
+  embedding_api_key: string
+  embedding_api_base_url: string
+  embedding_model_name: string
+  // Vision
+  vision_vendor: string
+  vision_api_key: string
+  vision_api_base_url: string
+  vision_model_name: string
+}
+
+interface SystemInfo {
+  platform: string
+  system: string
+  machine: string
+  architecture: string
+  is_loongarch: boolean
+  python_version: string
+  compatibility?: {
+    llm_backends?: Record<string, boolean>
+    ocr_backends?: Record<string, boolean>
+    vision_backends?: Record<string, boolean>
+  }
+  recommended?: {
+    llm_backend?: string
+    ocr_backend?: string
+    vision_backend?: string
+    embedding_backend?: string
+  }
+  hints?: {
+    loongarch?: string[]
+  }
+  llama_cpp?: {
+    available: boolean
+    default_url: string
+    alternate_url: string
+    hint: string
+  }
 }
 
 interface GpuDeviceInfo {
@@ -99,6 +153,17 @@ interface GpuStatus {
     paddle_gpu: boolean
     torch_available?: boolean
     paddle_available?: boolean
+    nvidia_driver_available?: boolean
+    diagnostics?: {
+      nvidia_driver_version?: string
+      cuda_driver_version?: string
+      nvidia_gpu_names?: string[]
+      torch_version?: string
+      torch_cuda_version?: string | null
+      torch_gpu_reason?: string
+      paddle_version?: string
+      paddle_gpu_reason?: string
+    }
   }
   ocr: {
     backend: string
@@ -118,7 +183,7 @@ interface GpuStatus {
 
 interface ServiceStatus {
   llm: { available: boolean; backend?: string; model?: string; error?: string }
-  embedding: { available: boolean; model?: string; error?: string }
+  embedding: { available: boolean; backend?: string; model?: string; error?: string }
   ocr: { available: boolean; backend?: string; error?: string }
   vision: { available: boolean; backend?: string; current_backend?: string; error?: string }
   dashscope: { available: boolean; api_key_set: boolean }
@@ -155,7 +220,23 @@ const LLM_BACKENDS = [
   { value: 'moonshot', label: '月之暗面 (Kimi)', website: 'https://platform.moonshot.cn' },
   { value: 'siliconflow', label: '硅基流动 (SiliconFlow)', website: 'https://www.siliconflow.cn' },
   { value: 'ollama', label: 'Ollama（本地模型）', website: 'https://ollama.com' },
+  { value: 'llama_cpp', label: 'llama.cpp（本地模型）', website: 'https://github.com/ggerganov/llama.cpp' },
   { value: 'openai_compatible', label: 'OpenAI 兼容 API', website: '' },
+]
+
+// Embedding 厂商列表
+const EMBEDDING_VENDORS = [
+  { value: 'dashscope', label: '通义千问 (DashScope)', website: 'https://dashscope.console.aliyun.com', defaultModel: 'text-embedding-v3', defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { value: 'openai_compatible', label: 'OpenAI 兼容 API', website: '', defaultModel: '', defaultBaseUrl: 'http://localhost:8080/v1' },
+  { value: 'llama_cpp', label: 'llama.cpp（本地）', website: 'https://github.com/ggerganov/llama.cpp', defaultModel: '', defaultBaseUrl: 'http://127.0.0.1:8080/v1' },
+  { value: 'ollama', label: 'Ollama（本地）', website: 'https://ollama.com', defaultModel: 'nomic-embed-text', defaultBaseUrl: 'http://localhost:11434/v1' },
+]
+
+// Vision 厂商列表
+const VISION_VENDORS = [
+  { value: 'dashscope', label: '通义千问 (DashScope)', website: 'https://dashscope.console.aliyun.com', defaultModel: 'qwen-vl-max', defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { value: 'openai_compatible', label: 'OpenAI 兼容 API', website: '', defaultModel: '', defaultBaseUrl: 'http://localhost:8081/v1' },
+  { value: 'llama_cpp', label: 'llama.cpp（本地多模态）', website: 'https://github.com/ggerganov/llama.cpp', defaultModel: 'Qwen2-VL-2B-Instruct-Q4_K_M', defaultBaseUrl: 'http://127.0.0.1:8081/v1' },
 ]
 
 const MINIMAX_MODELS = [
@@ -203,11 +284,11 @@ const EMBEDDING_MODELS = [
 ]
 
 const OCR_BACKENDS = [
-  { value: 'auto', label: '自动检测' },
-  { value: 'rapidocr', label: 'RapidOCR（CPU推荐）' },
-  { value: 'paddleocr', label: 'PaddleOCR（需GPU）' },
-  { value: 'api', label: 'DashScope API' },
-  { value: 'none', label: '关闭 OCR' },
+  { value: 'auto', label: '自动检测', loongarchHint: '将优先选择 RapidOCR / API' },
+  { value: 'rapidocr', label: 'RapidOCR（CPU推荐）', loongarchHint: 'LoongArch 推荐（CPU 即用）' },
+  { value: 'paddleocr', label: 'PaddleOCR（需GPU）', loongarchHint: 'LoongArch 无官方预编译 wheel，需自行从源码编译，难度高' },
+  { value: 'api', label: 'DashScope API', loongarchHint: '云端 OCR，LoongArch 完全可用' },
+  { value: 'none', label: '关闭 OCR', loongarchHint: '' },
 ]
 
 const OCR_LANGUAGES = [
@@ -303,13 +384,37 @@ function TestButton({
     setTesting(true)
     try {
       const payload: Record<string, string> = { service }
+      // 优先使用每个服务的独立 vendor 配置
       if (service === 'llm') {
-        payload.backend = config.llm_backend
-        payload.model = config.llm_model
-        if (config.llm_backend === 'openai_compatible') {
-          payload.base_url = config.llm_api_base_url
-          payload.api_key = config.llm_api_key !== '******' ? config.llm_api_key : ''
+        const llmBackend = (config.llm_vendor || config.llm_backend || 'dashscope').toLowerCase()
+        payload.backend = llmBackend
+        payload.model = config.llm_model_override || config.llm_model
+        payload.base_url = config.llm_api_base_url_override || config.llm_api_base_url
+        // 按 backend 类型选择正确的厂商 API Key
+        if (config.llm_api_key_override) {
+          payload.api_key = config.llm_api_key_override
+        } else {
+          const vendorKeyMap: Record<string, string | undefined> = {
+            minimax: config.minimax_api_key,
+            deepseek: config.deepseek_api_key,
+            zhipu: config.zhipu_api_key,
+            baichuan: config.baichuan_api_key,
+            moonshot: config.moonshot_api_key,
+            siliconflow: config.siliconflow_api_key,
+            openai_compatible: config.openai_compatible_api_key,
+          }
+          payload.api_key = vendorKeyMap[llmBackend] || config.llm_api_key || config.dashscope_api_key
         }
+      } else if (service === 'embedding') {
+        payload.backend = config.embedding_vendor || 'dashscope'
+        payload.model = config.embedding_model_name || config.embedding_model
+        payload.base_url = config.embedding_api_base_url
+        if (config.embedding_api_key) payload.api_key = config.embedding_api_key
+      } else if (service === 'vision') {
+        payload.backend = config.vision_vendor || config.vision_backend
+        payload.model = config.vision_model_name
+        payload.base_url = config.vision_api_base_url
+        if (config.vision_api_key) payload.api_key = config.vision_api_key
       }
       const res = await api.post<TestResult>('/admin/test-connection', payload)
       onResult(res.data)
@@ -359,6 +464,149 @@ function TestResultBadge({ result }: { result: TestResult | null }) {
   )
 }
 
+/**
+ * 单个服务（LLM / Embedding / Vision）的厂商配置卡
+ * 包含：厂商下拉 + 独立 API Key + Base URL + 模型名 + 测试按钮
+ */
+function ServiceVendorCard({
+  title,
+  icon,
+  vendorField,
+  vendorValue,
+  apiKeyField,
+  apiKeyValue,
+  baseUrlField,
+  baseUrlValue,
+  modelField,
+  modelValue,
+  vendors,
+  updateField,
+  testService,
+  onTestResult,
+  config,
+}: {
+  title: string
+  icon: React.ReactNode
+  vendorField: string
+  vendorValue: string
+  apiKeyField: string
+  apiKeyValue: string
+  baseUrlField: string
+  baseUrlValue: string
+  modelField: string
+  modelValue: string
+  vendors: Array<{ value: string; label: string; website?: string; defaultModel?: string; defaultBaseUrl?: string }>
+  updateField: (field: string, value: any) => void
+  testService: 'llm' | 'embedding' | 'vision'
+  onTestResult: (r: TestResult) => void
+  config: SystemConfig
+}) {
+  const currentVendor = vendors.find((v) => v.value === vendorValue)
+  const placeholderUrl = currentVendor?.defaultBaseUrl || ''
+  const placeholderModel = currentVendor?.defaultModel || ''
+
+  return (
+    <div className="rounded-md border p-3 space-y-2.5 bg-card">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          {icon}
+          {title}
+        </div>
+        {vendorValue && (
+          <Badge variant="secondary" className="text-[10px]">
+            {currentVendor?.label || vendorValue}
+          </Badge>
+        )}
+      </div>
+
+      {/* 厂商选择 */}
+      <div className="space-y-1">
+        <Label className="text-xs">厂商 / 后端</Label>
+        <Select
+          value={vendorValue || ''}
+          onValueChange={(v) => {
+            updateField(vendorField, v)
+            // 自动填默认 Base URL / Model
+            const vcfg = vendors.find((x) => x.value === v)
+            if (vcfg?.defaultBaseUrl && !baseUrlValue) {
+              updateField(baseUrlField, vcfg.defaultBaseUrl)
+            }
+            if (vcfg?.defaultModel && !modelValue) {
+              updateField(modelField, vcfg.defaultModel)
+            }
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="选择厂商（留空使用通用配置）" />
+          </SelectTrigger>
+          <SelectContent>
+            {vendors.map((v) => (
+              <SelectItem key={v.value} value={v.value}>
+                {v.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {currentVendor?.website && (
+          <a
+            href={currentVendor.website}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[10px] text-muted-foreground hover:underline block truncate"
+          >
+            {currentVendor.website}
+          </a>
+        )}
+      </div>
+
+      {/* 独立 API Key */}
+      <div className="space-y-1">
+        <Label className="text-xs">独立 API Key（留空用通用 Key）</Label>
+        <Input
+          type="password"
+          value={apiKeyValue || ''}
+          onChange={(e) => updateField(apiKeyField, e.target.value)}
+          placeholder="留空 → 使用厂商通用 Key"
+          className="h-8 text-xs font-mono"
+        />
+      </div>
+
+      {/* Base URL + Model 并排 */}
+      <div className="grid grid-cols-1 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Base URL</Label>
+          <Input
+            value={baseUrlValue || ''}
+            onChange={(e) => updateField(baseUrlField, e.target.value)}
+            placeholder={placeholderUrl || '如 https://api.example.com/v1'}
+            className="h-8 text-xs font-mono"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">模型名</Label>
+          <Input
+            value={modelValue || ''}
+            onChange={(e) => updateField(modelField, e.target.value)}
+            placeholder={placeholderModel || '如 qwen-max / text-embedding-v3'}
+            className="h-8 text-xs font-mono"
+          />
+        </div>
+      </div>
+
+      {/* 测试按钮 */}
+      <div className="flex justify-end pt-1">
+        <TestButton
+          service={testService}
+          config={config}
+          onResult={onTestResult}
+          label="测试"
+          icon={Zap}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function ApiSettingsPage() {
   const user = useAuthStore((s) => s.user)
   const isAdmin = user?.role === 'admin'
@@ -374,9 +622,18 @@ export default function ApiSettingsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingConfig, setPendingConfig] = useState<SystemConfig | null>(null)
 
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
+  const [showLoongarchHelp, setShowLoongarchHelp] = useState(true)
+  const isLoongarch = systemInfo?.is_loongarch ?? false
+  const llmCompat = systemInfo?.compatibility?.llm_backends ?? {}
+  const ocrCompat = systemInfo?.compatibility?.ocr_backends ?? {}
+  const visionCompat = systemInfo?.compatibility?.vision_backends ?? {}
+
   const [gpuStatus, setGpuStatus] = useState<GpuStatus | null>(null)
   const [gpuLoading, setGpuLoading] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
+  const [installingCudaDeps, setInstallingCudaDeps] = useState(false)
+  const [cudaInstallStatus, setCudaInstallStatus] = useState<string | null>(null)
   const gpuRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [models, setModels] = useState<ModelItem[]>([])
@@ -401,6 +658,15 @@ export default function ApiSettingsPage() {
       setMessage({ type: 'error', text: '加载配置失败' })
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  const fetchSystemInfo = useCallback(async () => {
+    try {
+      const res = await api.get<SystemInfo>('/admin/system-info')
+      setSystemInfo(res.data)
+    } catch {
+      setSystemInfo(null)
     }
   }, [])
 
@@ -435,6 +701,49 @@ export default function ApiSettingsPage() {
       setMessage({ type: 'error', text: '清理GPU缓存失败' })
     } finally {
       setClearingCache(false)
+    }
+  }
+
+  const handleInstallCudaDeps = async () => {
+    try {
+      setInstallingCudaDeps(true)
+      setCudaInstallStatus('正在启动安装...')
+      await api.post('/admin/install-cuda-deps')
+
+      const pollStatus = async () => {
+        try {
+          const res = await api.get<{ status: string }>('/admin/install-cuda-deps/status')
+          const status = res.data.status
+
+          if (status === 'installing' || status === 'uninstalling_cpu_torch' || status === 'installing_cuda_torch') {
+            const statusText: Record<string, string> = {
+              'uninstalling_cpu_torch': '正在卸载 CPU 版 PyTorch...',
+              'installing_cuda_torch': '正在安装 CUDA 版 PyTorch（约2.7GB，请耐心等待）...',
+              'installing': '正在准备安装...',
+            }
+            setCudaInstallStatus(statusText[status] || '安装中...')
+            setTimeout(pollStatus, 3000)
+          } else if (status === 'completed') {
+            setCudaInstallStatus('安装完成！正在刷新GPU状态...')
+            setInstallingCudaDeps(false)
+            fetchGpuStatus()
+            setTimeout(() => setCudaInstallStatus(null), 5000)
+          } else if (status.startsWith('failed:')) {
+            setCudaInstallStatus(`安装失败: ${status.replace('failed:', '')}`)
+            setInstallingCudaDeps(false)
+          } else {
+            setCudaInstallStatus(null)
+            setInstallingCudaDeps(false)
+          }
+        } catch {
+          setTimeout(pollStatus, 5000)
+        }
+      }
+
+      setTimeout(pollStatus, 2000)
+    } catch {
+      setCudaInstallStatus('启动安装失败')
+      setInstallingCudaDeps(false)
     }
   }
 
@@ -563,7 +872,8 @@ export default function ApiSettingsPage() {
     fetchModels()
     fetchLlmStatus()
     fetchServicesStatus()
-  }, [fetchConfig, fetchGpuStatus, fetchModels, fetchLlmStatus, fetchServicesStatus])
+    fetchSystemInfo()
+  }, [fetchConfig, fetchGpuStatus, fetchModels, fetchLlmStatus, fetchServicesStatus, fetchSystemInfo])
 
   useEffect(() => {
     gpuRefreshRef.current = setInterval(fetchGpuStatus, 30000)
@@ -571,6 +881,22 @@ export default function ApiSettingsPage() {
       if (gpuRefreshRef.current) clearInterval(gpuRefreshRef.current)
     }
   }, [fetchGpuStatus])
+
+  // LoongArch：若当前配置为不兼容后端，则提示一次并推荐切换（不强制覆盖）
+  const [loongarchSuggested, setLoongarchSuggested] = useState(false)
+  useEffect(() => {
+    if (!systemInfo || !isLoongarch || !config || loongarchSuggested) return
+    const ollamaInUse = config.llm_backend === 'ollama'
+    const paddleInUse = config.ocr_backend === 'paddleocr'
+    const localVisionInUse = config.vision_backend === 'local'
+    if (ollamaInUse || paddleInUse || localVisionInUse) {
+      setMessage({
+        type: 'error',
+        text: '检测到 LoongArch 环境与不兼容后端（Ollama/PaddleOCR/本地视觉），请手动切换到 DashScope API / RapidOCR / 自动视觉。功能保持可用，按需切换即可。',
+      })
+    }
+    setLoongarchSuggested(true)
+  }, [systemInfo, isLoongarch, config, loongarchSuggested])
 
   const updateField = <K extends keyof SystemConfig>(key: K, value: SystemConfig[K]) => {
     if (!config) return
@@ -710,6 +1036,73 @@ export default function ApiSettingsPage() {
         </div>
       )}
 
+      {systemInfo && (
+        <div className={`rounded-md border px-4 py-3 text-sm ${
+          isLoongarch
+            ? 'bg-amber-50 border-amber-200 text-amber-900'
+            : 'bg-blue-50 border-blue-200 text-blue-900'
+        }`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {isLoongarch ? (
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+              ) : (
+                <Server className="h-4 w-4 shrink-0 text-blue-600" />
+              )}
+              <span className="font-medium">
+                {isLoongarch
+                  ? '检测到 LoongArch 架构环境，已为您适配推荐方案'
+                  : '当前运行环境信息'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {systemInfo.system} · {systemInfo.machine} · Python {systemInfo.python_version}
+              </span>
+              {isLoongarch && systemInfo.llama_cpp && (
+                <Badge variant={systemInfo.llama_cpp.available ? 'default' : 'secondary'} className="text-[10px] px-1.5">
+                  llama.cpp {systemInfo.llama_cpp.available ? '已安装' : '未安装'}
+                </Badge>
+              )}
+            </div>
+            {isLoongarch && systemInfo.hints?.loongarch && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setShowLoongarchHelp(v => !v)}
+              >
+                {showLoongarchHelp ? '收起' : '查看建议'}
+              </Button>
+            )}
+          </div>
+          {isLoongarch && showLoongarchHelp && systemInfo.hints?.loongarch && (
+            <ul className="mt-2 space-y-1 text-xs text-amber-800 list-disc pl-5">
+              {systemInfo.hints.loongarch.map((h, i) => (
+                <li key={i}>{h}</li>
+              ))}
+            </ul>
+          )}
+          {isLoongarch && systemInfo.llama_cpp?.available && (
+            <div className="mt-2 flex items-center gap-2 text-xs">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs bg-amber-100 border-amber-300 hover:bg-amber-200"
+                onClick={() => {
+                  updateField('llm_backend', 'llama_cpp')
+                  updateField('llm_api_base_url', systemInfo.llama_cpp?.default_url || 'http://localhost:11434/v1')
+                  setMessage({ type: 'success', text: '已切换到 llama.cpp 本地模型，请配置 LLM 模型名称后保存' })
+                }}
+              >
+                一键配置 llama-server
+              </Button>
+              <span className="text-amber-700">
+                启动：<code className="bg-amber-100 px-1 rounded">llama-server -m ~/models/*.gguf --host 0.0.0.0 --port 11434</code>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -792,58 +1185,142 @@ export default function ApiSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5 text-amber-500" />
-            API 密钥管理
+            API 密钥与厂商管理（多厂商 / 多服务独立配置）
           </CardTitle>
           <CardDescription>
-            配置系统核心 API 密钥，DashScope Key 同时用于 LLM、Embedding 和视觉服务
+            LLM / Embedding / Vision 三类服务可分别选择不同厂商，API Key、Base URL、模型名也独立配置。例：LLM 用本地 llama.cpp、Embedding 用 DashScope、Vision 用 OpenAI 兼容的 vLLM
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="form-grid-fix">
-            <ApiKeyInput
-              id="dashscope-api-key"
-              label="DashScope API Key"
-              value={config.dashscope_api_key}
-              onChange={(v) => updateField('dashscope_api_key', v)}
-              placeholder="sk-xxxxxxxxxxxxxxxx"
-              hint="通义千问 API 密钥，从 dashscope.console.aliyun.com 获取，用于 LLM / Embedding / 视觉服务"
+        <CardContent className="space-y-5">
+          {/* ========== 通用 API 密钥（厂商级公共 Key） ========== */}
+          <div className="rounded-md border p-3 space-y-2 bg-muted/20">
+            <div className="text-sm font-medium">通用 API 密钥（厂商级，未在下方服务独立配置时自动使用）</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <ApiKeyInput id="dashscope-api-key" label="DashScope / 通义千问 Key" value={config.dashscope_api_key} onChange={(v) => updateField('dashscope_api_key', v)} placeholder="sk-xxx" hint="Embedding/Vision 默认厂商" />
+              <ApiKeyInput id="deepseek-api-key" label="DeepSeek Key" value={config.deepseek_api_key} onChange={(v) => updateField('deepseek_api_key', v)} placeholder="sk-xxx" />
+              <ApiKeyInput id="zhipu-api-key" label="智谱 AI Key" value={config.zhipu_api_key} onChange={(v) => updateField('zhipu_api_key', v)} />
+              <ApiKeyInput id="baichuan-api-key" label="百川 Key" value={config.baichuan_api_key} onChange={(v) => updateField('baichuan_api_key', v)} />
+              <ApiKeyInput id="moonshot-api-key" label="Moonshot / Kimi Key" value={config.moonshot_api_key} onChange={(v) => updateField('moonshot_api_key', v)} />
+              <ApiKeyInput id="siliconflow-api-key" label="SiliconFlow / 硅基流动 Key" value={config.siliconflow_api_key} onChange={(v) => updateField('siliconflow_api_key', v)} />
+              <ApiKeyInput id="minimax-api-key" label="MiniMax Key" value={config.minimax_api_key} onChange={(v) => updateField('minimax_api_key', v)} />
+              <ApiKeyInput id="openai-compatible-api-key" label="OpenAI 兼容 Key（vLLM/llama-server）" value={config.openai_compatible_api_key} onChange={(v) => updateField('openai_compatible_api_key', v)} placeholder="no-key" />
+            </div>
+          </div>
+
+          {/* ========== 独立服务配置：3 张并排卡 ========== */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* --- LLM 服务卡 --- */}
+            <ServiceVendorCard
+              title="LLM 文本生成"
+              icon={<Brain className="h-4 w-4 text-blue-500" />}
+              vendorField="llm_vendor"
+              vendorValue={config.llm_vendor}
+              apiKeyField="llm_api_key_override"
+              apiKeyValue={config.llm_api_key_override}
+              baseUrlField="llm_api_base_url_override"
+              baseUrlValue={config.llm_api_base_url_override}
+              modelField="llm_model_override"
+              modelValue={config.llm_model_override}
+              vendors={LLM_BACKENDS}
+              updateField={updateField}
+              testService="llm"
+              onTestResult={(r) => handleTestResult('llm', r)}
+              config={config}
             />
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label style={{ color: isLight ? '#475569' : '#e8e8e8' }}>连接测试</Label>
-                <div className="flex gap-1.5">
-                  <TestButton
-                    service="llm"
-                    config={config}
-                    onResult={(r) => handleTestResult('llm', r)}
-                    label="LLM"
-                    icon={Zap}
-                  />
-                  <TestButton
-                    service="embedding"
-                    config={config}
-                    onResult={(r) => handleTestResult('embedding', r)}
-                    label="Embed"
-                    icon={Search}
-                  />
-                  <TestButton
-                    service="vision"
-                    config={config}
-                    onResult={(r) => handleTestResult('vision', r)}
-                    label="Vision"
-                    icon={Eye}
-                  />
-                </div>
+
+            {/* --- Embedding 服务卡 --- */}
+            <ServiceVendorCard
+              title="Embedding 向量化"
+              icon={<Search className="h-4 w-4 text-green-500" />}
+              vendorField="embedding_vendor"
+              vendorValue={config.embedding_vendor}
+              apiKeyField="embedding_api_key"
+              apiKeyValue={config.embedding_api_key}
+              baseUrlField="embedding_api_base_url"
+              baseUrlValue={config.embedding_api_base_url}
+              modelField="embedding_model_name"
+              modelValue={config.embedding_model_name}
+              vendors={EMBEDDING_VENDORS}
+              updateField={updateField}
+              testService="embedding"
+              onTestResult={(r) => handleTestResult('embedding', r)}
+              config={config}
+            />
+
+            {/* --- Vision 服务卡 --- */}
+            <ServiceVendorCard
+              title="Vision 视觉理解"
+              icon={<Eye className="h-4 w-4 text-purple-500" />}
+              vendorField="vision_vendor"
+              vendorValue={config.vision_vendor}
+              apiKeyField="vision_api_key"
+              apiKeyValue={config.vision_api_key}
+              baseUrlField="vision_api_base_url"
+              baseUrlValue={config.vision_api_base_url}
+              modelField="vision_model_name"
+              modelValue={config.vision_model_name}
+              vendors={VISION_VENDORS}
+              updateField={updateField}
+              testService="vision"
+              onTestResult={(r) => handleTestResult('vision', r)}
+              config={config}
+            />
+          </div>
+
+          {/* 兼容说明 */}
+          <div className="rounded-md border-l-4 border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/20 p-3 text-xs space-y-1">
+            <div className="font-medium text-cyan-900 dark:text-cyan-200">关于 API 格式兼容性</div>
+            <ul className="text-cyan-800 dark:text-cyan-300 list-disc pl-5 space-y-0.5">
+              <li><b>留空回退</b>：每个服务的"独立 Key / Base URL"留空时，会自动使用对应厂商的"通用 API 密钥"</li>
+              <li><b>OpenAI 兼容格式</b>：DashScope、DeepSeek、Zhipu、Baichuan、Moonshot、SiliconFlow、MiniMax 全部支持 /v1/chat/completions、/v1/embeddings、/v1/models</li>
+              <li><b>llama.cpp</b>：启动 llama-server 后即可被 LLM/Embedding/Vision 三服务共用；Embedding 需服务开启 embedding 端点、Vision 需 --mmproj</li>
+              <li><b>LoongArch 推荐</b>：LLM=llama.cpp、Embedding=DashScope、Vision=llama.cpp（Qwen2-VL-2B 多模态）</li>
+            </ul>
+          </div>
+
+          {/* 旧 LLM 后端兼容（保持旧字段不动，新代码不依赖） */}
+          <details className="rounded-md border p-3">
+            <summary className="text-sm font-medium cursor-pointer text-muted-foreground hover:text-foreground">
+              兼容：旧版 LLM 后端配置（llm_backend / llm_model 等）
+            </summary>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">旧 LLM 后端（兼容字段）</Label>
+                <Select value={config.llm_backend || 'dashscope'} onValueChange={(v) => updateField('llm_backend', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {LLM_BACKENDS.map(b => <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="premium-card p-3 space-y-1">
-                {testResults.llm && <TestResultBadge result={testResults.llm} />}
-                {testResults.embedding && <TestResultBadge result={testResults.embedding} />}
-                {testResults.vision && <TestResultBadge result={testResults.vision} />}
-                {testResults.ocr && <TestResultBadge result={testResults.ocr} />}
-                {!testResults.llm && !testResults.embedding && !testResults.vision && !testResults.ocr && (
-                  <p className="text-xs text-muted-foreground">点击上方按钮测试各服务连接</p>
-                )}
+              <div className="space-y-1">
+                <Label className="text-xs">旧 LLM 模型（兼容字段）</Label>
+                <Input value={config.llm_model || ''} onChange={(e) => updateField('llm_model', e.target.value)} />
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">旧 LLM Base URL（兼容字段）</Label>
+                <Input value={config.llm_api_base_url || ''} onChange={(e) => updateField('llm_api_base_url', e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">旧 Embedding 模型（兼容字段）</Label>
+                <Input value={config.embedding_model || ''} onChange={(e) => updateField('embedding_model', e.target.value)} />
+              </div>
+            </div>
+          </details>
+
+          {/* 一键测试所有服务 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>连接测试结果（每张卡内已有独立测试按钮）</Label>
+            </div>
+            <div className="premium-card p-3 space-y-1">
+              {testResults.llm && <TestResultBadge result={testResults.llm} />}
+              {testResults.embedding && <TestResultBadge result={testResults.embedding} />}
+              {testResults.vision && <TestResultBadge result={testResults.vision} />}
+              {testResults.ocr && <TestResultBadge result={testResults.ocr} />}
+              {!testResults.llm && !testResults.embedding && !testResults.vision && !testResults.ocr && (
+                <p className="text-xs text-muted-foreground">在各服务卡上点击"测试"按钮验证</p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -895,11 +1372,50 @@ export default function ApiSettingsPage() {
             </div>
           ) : !gpuStatus.gpu.available ? (
             <div className="rounded-lg border border-dashed p-4 text-center max-w-md mx-auto">
-              <XCircle className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm font-medium">未检测到 GPU 设备</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                系统将以 CPU 模式运行，OCR 和视觉模型将使用 API 或 CPU 推理
-              </p>
+              {gpuStatus.gpu.nvidia_driver_available ? (
+                <>
+                  <AlertTriangle className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-yellow-600">检测到 NVIDIA GPU 但未启用 CUDA 加速</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {(gpuStatus.gpu.diagnostics?.nvidia_gpu_names?.length ?? 0) > 0
+                      ? `GPU: ${gpuStatus.gpu.diagnostics?.nvidia_gpu_names?.join(", ")}`
+                      : "NVIDIA GPU 已检测到"}
+                    {gpuStatus.gpu.diagnostics?.cuda_driver_version && ` | CUDA 驱动: ${gpuStatus.gpu.diagnostics.cuda_driver_version}`}
+                  </p>
+                  <div className="mt-2 space-y-1 text-xs text-left max-w-sm mx-auto">
+                    {gpuStatus.gpu.diagnostics?.torch_gpu_reason && (
+                      <p className="text-yellow-600">⚠ PyTorch: {gpuStatus.gpu.diagnostics.torch_gpu_reason}</p>
+                    )}
+                    {gpuStatus.gpu.diagnostics?.paddle_gpu_reason && (
+                      <p className="text-yellow-600">⚠ PaddlePaddle: {gpuStatus.gpu.diagnostics.paddle_gpu_reason}</p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="mt-3 bg-yellow-600 hover:bg-yellow-700 text-white"
+                    disabled={installingCudaDeps}
+                    onClick={handleInstallCudaDeps}
+                  >
+                    {installingCudaDeps ? (
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Download className="mr-1 h-3 w-3" />
+                    )}
+                    一键安装 CUDA 版 PyTorch
+                  </Button>
+                  {cudaInstallStatus && (
+                    <p className="text-xs text-muted-foreground mt-1">{cudaInstallStatus}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm font-medium">未检测到 GPU 设备</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    系统将以 CPU 模式运行，OCR 和视觉模型将使用 API 或 CPU 推理
+                  </p>
+                </>
+              )}
               <div className="flex items-center justify-center gap-4 mt-3 text-xs text-muted-foreground">
                 <span>CUDA: {gpuStatus.gpu.cuda_available ? '✓' : '✗'}</span>
                 <span>PyTorch: {gpuStatus.gpu.torch_gpu ? '✓' : '✗'}</span>
@@ -1004,16 +1520,40 @@ export default function ApiSettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {OCR_BACKENDS.map((b) => (
-                    <SelectItem key={b.value} value={b.value}>
-                      {b.label}
-                    </SelectItem>
-                  ))}
+                  {OCR_BACKENDS.map((b) => {
+                    const compat = isLoongarch ? ocrCompat[b.value] : true
+                    return (
+                      <SelectItem key={b.value} value={b.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{b.label}</span>
+                          {isLoongarch && (
+                            <Badge
+                              variant={compat === false ? 'destructive' : 'secondary'}
+                              className="text-[10px] px-1.5"
+                            >
+                              {compat === false ? '不兼容' : '可用'}
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                auto 自动选择可用后端（RapidOCR → PaddleOCR → API）
-              </p>
+              {isLoongarch && (() => {
+                const cur = OCR_BACKENDS.find(b => b.value === config.ocr_backend)
+                const curCompat = ocrCompat[config.ocr_backend]
+                return (
+                  <p className={`text-xs ${curCompat === false ? 'text-red-600' : 'text-amber-700'}`}>
+                    {cur?.loongarchHint}
+                  </p>
+                )
+              })()}
+              {!isLoongarch && (
+                <p className="text-xs text-muted-foreground">
+                  auto 自动选择可用后端（RapidOCR → PaddleOCR → API）
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -1070,20 +1610,54 @@ export default function ApiSettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">自动检测</SelectItem>
-                  <SelectItem value="dashscope">DashScope API</SelectItem>
+                  <SelectItem value="auto">
+                    <div className="flex items-center gap-2">
+                      <span>自动检测</span>
+                      {isLoongarch && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5">可用</Badge>
+                      )}
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="dashscope">
+                    <div className="flex items-center gap-2">
+                      <span>DashScope API</span>
+                      {isLoongarch && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5">LoongArch 推荐</Badge>
+                      )}
+                    </div>
+                  </SelectItem>
                   {models
                     .filter((m) => m.type === 'vision' && m.downloaded)
-                    .map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}（本地）
-                      </SelectItem>
-                    ))}
+                    .map((m) => {
+                      const localCompat = isLoongarch ? visionCompat['local'] : true
+                      return (
+                        <SelectItem key={m.id} value={m.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{m.name}（本地）</span>
+                            {isLoongarch && (
+                              <Badge
+                                variant={localCompat === false ? 'destructive' : 'secondary'}
+                                className="text-[10px] px-1.5"
+                              >
+                                {localCompat === false ? '需自行编译' : '可用'}
+                              </Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      )
+                    })}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                已下载的视觉模型会自动出现在选项中，选择后使用本地推理
-              </p>
+              {isLoongarch && (
+                <p className="text-xs text-amber-700">
+                  LoongArch 上本地视觉模型需自行编译 llama.cpp + GGUF（无 PyTorch GPU）。推荐使用 DashScope API。
+                </p>
+              )}
+              {!isLoongarch && (
+                <p className="text-xs text-muted-foreground">
+                  已下载的视觉模型会自动出现在选项中，选择后使用本地推理
+                </p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -1117,21 +1691,44 @@ export default function ApiSettingsPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {models.map((model) => (
+              {models.map((model) => {
+                // 计算 LoongArch 兼容性与提示
+                let loongarchBadge: { text: string; variant: 'destructive' | 'secondary' | 'outline' } | null = null
+                let loongarchTip = ''
+                if (isLoongarch) {
+                  if (model.type === 'vision') {
+                    loongarchBadge = { text: 'GGUF 可用', variant: 'secondary' }
+                    loongarchTip = 'GGUF 量化版，llama.cpp 多模态推理可用。下载后启动 llama-server 加载此模型即可。'
+                  } else if (model.id === 'PaddleOCR/PPOCRv4') {
+                    loongarchBadge = { text: '不兼容', variant: 'destructive' }
+                    loongarchTip = 'PaddleOCR 依赖 paddlepaddle-gpu，LoongArch 上无官方预编译 wheel（需从源码编译，难度高）。推荐使用 RapidOCR 或 DashScope API 完成 OCR。'
+                  } else if (model.type === 'llm') {
+                    loongarchBadge = { text: 'GGUF 推荐', variant: 'secondary' }
+                    loongarchTip = 'GGUF 量化版文本模型，下载后用 llama-server 启动本地 LLM 服务。'
+                  } else if (model.type === 'ocr') {
+                    loongarchBadge = { text: '兼容', variant: 'secondary' }
+                  }
+                }
+                return (
                 <div
                   key={model.id}
                   className="rounded-lg border p-3 space-y-2"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium">{model.name}</span>
                       {model.recommended && (
                         <Badge variant="default" className="text-xs bg-blue-500">推荐</Badge>
                       )}
                       <Badge variant="outline" className="text-xs">
-                        {model.type === 'vision' ? '视觉' : model.type === 'ocr' ? 'OCR' : model.type}
+                        {model.type === 'vision' ? '视觉' : model.type === 'ocr' ? 'OCR' : model.type === 'llm' ? 'LLM' : model.type}
                       </Badge>
                       <span className="text-xs text-muted-foreground">{model.size}</span>
+                      {loongarchBadge && (
+                        <Badge variant={loongarchBadge.variant} className="text-[10px] px-1.5">
+                          LoongArch · {loongarchBadge.text}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       {model.downloaded ? (
@@ -1205,8 +1802,14 @@ export default function ApiSettingsPage() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">{model.description}</p>
+                  {isLoongarch && loongarchTip && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      {loongarchTip}
+                    </p>
+                  )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>
@@ -1233,6 +1836,8 @@ export default function ApiSettingsPage() {
                   if (v === 'dashscope') {
                     updateField('llm_model', 'qwen-max')
                     setLlmModels(LLM_MODELS.map(m => ({ id: m.value, name: m.label })))
+                  } else if (v === 'llama_cpp') {
+                    fetchLlmModels(v, config.llm_api_base_url || 'http://localhost:11434/v1', config.llm_api_key)
                   } else {
                     fetchLlmModels(v, config.llm_api_base_url, config.llm_api_key)
                   }
@@ -1242,13 +1847,36 @@ export default function ApiSettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {LLM_BACKENDS.map((b) => (
-                    <SelectItem key={b.value} value={b.value}>
-                      {b.label}
-                    </SelectItem>
-                  ))}
+                  {LLM_BACKENDS.map((b) => {
+                    const compat = isLoongarch ? llmCompat[b.value] : true
+                    return (
+                      <SelectItem key={b.value} value={b.value}>
+                        <div className="flex items-center gap-2">
+                          <span>{b.label}</span>
+                          {isLoongarch && (
+                            <Badge
+                              variant={compat === false ? 'destructive' : 'secondary'}
+                              className="text-[10px] px-1.5"
+                            >
+                              {compat === false ? '不兼容' : '可用'}
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
+              {isLoongarch && (() => {
+                const cur = LLM_BACKENDS.find(b => b.value === config.llm_backend)
+                const curCompat = llmCompat[config.llm_backend]
+                return (
+                  <p className={`text-xs ${curCompat === false ? 'text-red-600' : 'text-amber-700'}`}>
+                    {cur?.loongarchHint}
+                    {curCompat === false && ' · 当前架构不兼容，可手动配置但服务将无法启动'}
+                  </p>
+                )
+              })()}
               <div className="flex items-center gap-2">
                 {llmStatus?.available ? (
                   <Badge variant="default" className="text-xs bg-green-500">
@@ -1461,6 +2089,27 @@ export default function ApiSettingsPage() {
                 <p className="text-xs text-muted-foreground">
                   Ollama 默认地址 http://localhost:11434，支持自定义
                 </p>
+              </div>
+            )}
+
+            {config.llm_backend === 'llama_cpp' && (
+              <div className="space-y-2">
+                <Label htmlFor="llama-cpp-url">llama-server 服务地址</Label>
+                <Input
+                  id="llama-cpp-url"
+                  value={config.llm_api_base_url}
+                  onChange={(e) => updateField('llm_api_base_url', e.target.value)}
+                  placeholder="http://localhost:11434/v1"
+                />
+                <p className="text-xs text-muted-foreground">
+                  llama-server 默认地址 http://localhost:11434/v1。启动命令：
+                  <code className="bg-muted px-1 rounded ml-1">llama-server -m ~/models/*.gguf --host 0.0.0.0 --port 11434</code>
+                </p>
+                {systemInfo?.llama_cpp?.available && (
+                  <p className="text-xs text-green-600">
+                    ✓ 已检测到 llama.cpp 二进制，可直接启动本地推理
+                  </p>
+                )}
               </div>
             )}
 

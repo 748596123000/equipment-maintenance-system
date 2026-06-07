@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import platform
 import tempfile
 from typing import Dict, List, Optional
 
@@ -10,6 +11,10 @@ from app.utils.gpu_utils import detect_gpu
 logger = logging.getLogger(__name__)
 
 _ocr_instance = None
+
+# 架构检测
+_ARCH = platform.machine().lower()
+_IS_LOONGARCH = "loongarch" in _ARCH or "loong64" in _ARCH
 
 
 class OCRResult:
@@ -50,7 +55,11 @@ class OCRService:
                 return True
             if self._try_init_api():
                 return True
-            logger.warning("所有 OCR 后端均不可用")
+            if _IS_LOONGARCH:
+                logger.warning("LoongArch: 所有 OCR 后端均不可用")
+                logger.warning("建议：配置 DASHSCOPE_API_KEY 使用API OCR，或安装 rapidocr_onnxruntime")
+            else:
+                logger.warning("所有 OCR 后端均不可用")
             self._initialized = True
             return False
 
@@ -75,6 +84,11 @@ class OCRService:
         return False
 
     def _try_init_paddleocr(self) -> bool:
+        # LoongArch架构跳过PaddleOCR（不支持）
+        if _IS_LOONGARCH:
+            logger.debug("LoongArch架构跳过PaddleOCR")
+            return False
+
         try:
             from paddleocr import PaddleOCR
 

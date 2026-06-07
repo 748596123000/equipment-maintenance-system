@@ -13,10 +13,13 @@ interface ChatPanelProps {
   title?: string
   searchMode?: string
   topK?: number
+  forceDarkContent?: boolean
 }
 
-export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK }: ChatPanelProps) {
+export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK, forceDarkContent }: ChatPanelProps) {
   const [input, setInput] = useState('')
+  const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   
@@ -37,12 +40,14 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
 
   const handleSend = async () => {
     const question = input.trim()
-    if (!question || loading) return
+    if ((!question && !pendingImage) || loading) return
 
     setInput('')
+    const imageData = pendingImage
+    setPendingImage(null)
     setLoading(true)
     try {
-      await sendMessage(sessionKey, question, searchMode, topK)
+      await sendMessage(sessionKey, question, searchMode, topK, imageData || undefined)
     } finally {
       setLoading(false)
     }
@@ -64,15 +69,16 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
     clearSession(sessionKey)
   }
 
-  // Theme-aware styles
-  const borderColor = isLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.1)'
-  const bgColor = isLight ? '#ffffff' : 'rgba(15, 15, 35, 0.5)'
-  const textColor = isLight ? '#1e293b' : '#e8e8f0'
-  const mutedColor = isLight ? '#94a3b8' : '#505080'
-  const inputBg = isLight ? '#ffffff' : 'rgba(10, 10, 25, 0.9)'
-  const inputBorder = isLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.3)'
-  const accentColor = isLight ? '#2563eb' : '#00f0ff'
-  const accentGlow = isLight ? 'rgba(37, 99, 235, 0.15)' : 'rgba(0, 240, 255, 0.15)'
+  const effectiveLight = forceDarkContent ? false : isLight
+
+  const borderColor = effectiveLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.1)'
+  const bgColor = effectiveLight ? '#ffffff' : 'rgba(15, 15, 35, 0.5)'
+  const textColor = effectiveLight ? '#1e293b' : '#e8e8f0'
+  const mutedColor = effectiveLight ? '#94a3b8' : '#505080'
+  const inputBg = effectiveLight ? '#ffffff' : 'rgba(10, 10, 25, 0.9)'
+  const inputBorder = effectiveLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.3)'
+  const accentColor = effectiveLight ? '#2563eb' : '#00f0ff'
+  const accentGlow = effectiveLight ? 'rgba(37, 99, 235, 0.15)' : 'rgba(0, 240, 255, 0.15)'
 
   return (
     <div className="flex h-full flex-col">
@@ -87,8 +93,8 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
             size="sm" 
             onClick={handleNewChat}
             style={{ 
-              borderColor: isLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.2)',
-              color: isLight ? '#475569' : '#e8e8f0'
+              borderColor: effectiveLight ? '#e2e8f0' : 'rgba(0, 240, 255, 0.2)',
+              color: effectiveLight ? '#475569' : '#e8e8f0'
             }}
           >
             新建对话
@@ -119,7 +125,7 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
         <div className="space-y-4">
           {messages.map((msg, idx) => (
             <div key={idx}>
-              <MessageBubble role={msg.role} content={msg.content} />
+              <MessageBubble role={msg.role} content={msg.content} forceDark={forceDarkContent} />
               {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
                 <div className="flex justify-start mt-1">
                   <div className="max-w-[75%]">
@@ -129,6 +135,7 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
                         content: s.content,
                         score: s.score,
                       }))}
+                      forceDark={forceDarkContent}
                     />
                   </div>
                 </div>
@@ -140,9 +147,9 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
               <div 
                 className="max-w-[75%] rounded-2xl rounded-bl-sm px-4 py-3"
                 style={{ 
-                  background: isLight ? '#f1f5f9' : 'rgba(15, 15, 35, 0.8)',
-                  border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(0, 240, 255, 0.15)',
-                  boxShadow: isLight ? undefined : '0 0 15px rgba(0, 240, 255, 0.1)'
+                  background: effectiveLight ? '#f1f5f9' : 'rgba(15, 15, 35, 0.8)',
+                  border: effectiveLight ? '1px solid #e2e8f0' : '1px solid rgba(0, 240, 255, 0.15)',
+                  boxShadow: effectiveLight ? undefined : '0 0 15px rgba(0, 240, 255, 0.1)'
                 }}
               >
                 <div className="flex items-center gap-2">
@@ -159,8 +166,43 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
         </div>
       </ScrollArea>
 
-      <div className="border-t p-4" style={{ borderColor }}>
+      <div className="border-t p-3" style={{ borderColor }}>
+        {pendingImage && (
+          <div className="flex items-center gap-2 p-2 mb-2 rounded-lg" style={{ background: effectiveLight ? '#f1f5f9' : 'rgba(30,30,50,0.8)' }}>
+            <img src={`data:image/png;base64,${pendingImage}`} alt="待发送图片" className="h-10 w-10 object-cover rounded" />
+            <span className="text-xs text-muted-foreground">已选择图片</span>
+            <button onClick={() => setPendingImage(null)} className="text-muted-foreground hover:text-foreground">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
         <div className="flex gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              const reader = new FileReader()
+              reader.onload = (ev) => {
+                const result = ev.target?.result as string
+                setPendingImage(result.split(',')[1])
+              }
+              reader.readAsDataURL(file)
+              e.target.value = ''
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 h-8 w-8"
+            onClick={() => fileInputRef.current?.click()}
+            title="上传图片"
+          >
+            <ImageIcon className="h-4 w-4" />
+          </Button>
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -172,16 +214,16 @@ export function ChatPanel({ sessionKey, title = '智能问答', searchMode, topK
               background: inputBg,
               borderColor: inputBorder,
               color: textColor,
-              boxShadow: isLight ? undefined : '0 0 10px rgba(0, 240, 255, 0.1)'
+              boxShadow: effectiveLight ? undefined : '0 0 10px rgba(0, 240, 255, 0.1)'
             }}
           />
-          <Button 
-            onClick={handleSend} 
-            disabled={loading || !input.trim()}
+          <Button
+            onClick={handleSend}
+            disabled={loading || (!input.trim() && !pendingImage)}
             className="btn-cyber"
             style={{
               background: accentColor,
-              color: isLight ? '#ffffff' : '#000000',
+              color: effectiveLight ? '#ffffff' : '#000000',
               boxShadow: `0 0 15px ${accentGlow}`
             }}
           >

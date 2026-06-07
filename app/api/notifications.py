@@ -86,7 +86,7 @@ def get_timestamp():
     """获取当前时间戳"""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-@router.get("/list", response_model=NotificationListResponse, summary="获取通知列表")
+@router.get("/list", summary="获取通知列表")
 async def get_notifications(
     user_id: str = Query("admin", description="用户ID"),
     is_admin: bool = Query(True, description="是否为管理员"),
@@ -112,9 +112,13 @@ async def get_notifications(
     )
 
     return {
-        "total": result["total"],
-        "unread_count": result["unread_count"],
-        "notifications": result["notifications"]
+        "code": 200,
+        "message": "查询成功",
+        "data": {
+            "total": result["total"],
+            "unread_count": result["unread_count"],
+            "notifications": result["notifications"]
+        }
     }
 
 @router.post("/create", summary="创建新通知")
@@ -143,7 +147,7 @@ async def create_notification(notification: NotificationCreate):
     )
 
     return {
-        "code": 0,
+        "code": 200,
         "message": "通知创建成功",
         "data": {"notification_id": notif_id}
     }
@@ -160,7 +164,7 @@ async def mark_as_read(notification_id: str = Path(..., description="通知ID"))
     success = db.mark_notification_read(notification_id)
 
     if success:
-        return {"code": 0, "message": "已标记为已读"}
+        return {"code": 200, "message": "已标记为已读", "data": None}
     else:
         raise HTTPException(status_code=404, detail="通知不存在")
 
@@ -178,7 +182,7 @@ async def mark_all_as_read(
     db = get_database()
     count = db.mark_all_notifications_read(user_id=user_id, is_admin=is_admin)
 
-    return {"code": 0, "message": f"已标记 {count} 条通知为已读"}
+    return {"code": 200, "message": f"已标记 {count} 条通知为已读", "data": None}
 
 @router.delete("/{notification_id}", summary="删除通知")
 async def delete_notification(notification_id: str = Path(..., description="通知ID")):
@@ -192,7 +196,7 @@ async def delete_notification(notification_id: str = Path(..., description="通�
     success = db.delete_notification(notification_id)
 
     if success:
-        return {"code": 0, "message": "通知已删除"}
+        return {"code": 200, "message": "通知已删除", "data": None}
     else:
         raise HTTPException(status_code=404, detail="通知不存在")
 
@@ -216,7 +220,7 @@ async def get_unread_count(
         unread_only=True
     )
 
-    return {"unread_count": result["unread_count"]}
+    return {"code": 200, "message": "查询成功", "data": {"unread_count": result["unread_count"]}}
 
 @router.post("/upload-notify-admin", summary="用户上传文档后通知管理员")
 async def notify_admin_upload(request: NotifyAdminUploadRequest):
@@ -242,7 +246,7 @@ async def notify_admin_upload(request: NotifyAdminUploadRequest):
     )
 
     return {
-        "code": 0,
+        "code": 200,
         "message": "已通知管理员",
         "data": {
             "notification_id": notif_id,
@@ -285,7 +289,7 @@ async def notify_user_approval(request: NotifyUserApprovalRequest):
     )
 
     return {
-        "code": 0,
+        "code": 200,
         "message": "已通知用户",
         "data": {
             "notification_id": notif_id,

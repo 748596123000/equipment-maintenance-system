@@ -32,7 +32,7 @@ interface HealthInfo {
   }
 }
 
-interface UserItem { id: string; username: string; role: string; created_at: string; status?: string }
+interface UserItem { id?: string; user_id?: string; username: string; role: string; created_at: string; status?: string }
 interface LogItem { id: string; created_at: string; user_id: string; action: string; detail: string; ip_address: string }
 interface Pagination { total: number; page: number; page_size: number }
 interface LogResponse { logs: LogItem[]; pagination: Pagination }
@@ -111,6 +111,8 @@ export default function AdminPage() {
     catch { setErrorMsg("拒绝操作失败，请稍后重试"); }
   }, [fetchPendingUsers]);
 
+  const getUserId = (u: UserItem) => u.id || u.user_id || '';
+
   const handleCreateUser = useCallback(async () => {
     try {
       await api.post("/admin/users", { username: newUsername, password: newPassword, role: newRole });
@@ -121,7 +123,7 @@ export default function AdminPage() {
 
   const handleDeleteUser = useCallback(async () => {
     if (!deleteTarget) return;
-    try { await api.delete(`/admin/users/${deleteTarget.id}`); fetchUsers(); }
+    try { await api.delete(`/admin/users/${getUserId(deleteTarget)}`); fetchUsers(); }
     catch { setErrorMsg("删除用户失败，请稍后重试"); }
     finally { setDeleteDialogOpen(false); setDeleteTarget(null); }
   }, [deleteTarget, fetchUsers]);
@@ -338,10 +340,10 @@ export default function AdminPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <Button variant="outline" size="sm" onClick={() => handleApproveUser(u.id)} className="rounded-lg" style={{ borderColor: isLight ? '#e2e8f0' : `${colors.CYBER_GREEN}50`, color: isLight ? colors.CYBER_GREEN : colors.CYBER_GREEN }}>
+                              <Button variant="outline" size="sm" onClick={() => handleApproveUser(getUserId(u))} className="rounded-lg" style={{ borderColor: isLight ? '#e2e8f0' : `${colors.CYBER_GREEN}50`, color: isLight ? colors.CYBER_GREEN : colors.CYBER_GREEN }}>
                                 <UserCheck className="mr-1 h-3.5 w-3.5" /> 通过
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleRejectUser(u.id)} className="rounded-lg" style={{ 
+                              <Button variant="outline" size="sm" onClick={() => handleRejectUser(getUserId(u))} className="rounded-lg" style={{ 
                                 borderColor: isLight ? '#e2e8f0' : `${colors.CYBER_RED}50`, 
                                 color: isLight ? colors.CYBER_RED : colors.CYBER_RED,
                                 background: isLight ? '#ffffff' : 'transparent'

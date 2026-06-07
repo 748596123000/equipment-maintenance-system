@@ -1,0 +1,24 @@
+[Unit]
+Description=设备检修知识检索与作业系统 - 前端服务
+After=network.target loongarch-backend.service
+Requires=loongarch-backend.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/feature-redesign/frontend
+Environment="NODE_ENV=production"
+Environment="VITE_API_BASE_URL=http://localhost:8000"
+ExecStart=/usr/bin/node /opt/feature-redesign/frontend/dist/server.js
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=loongarch-frontend
+
+[Install]
+WantedBy=multi-user.target

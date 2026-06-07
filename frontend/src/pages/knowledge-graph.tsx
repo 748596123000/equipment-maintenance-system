@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,8 @@ import {
   FileText,
   Hexagon,
   Download,
+  Maximize2,
+  Minimize2,
   Plus,
   Trash2,
   Edit3,
@@ -39,6 +42,8 @@ import {
   ChevronRight,
   Loader2,
   TreePine,
+  CheckSquare,
+  ListChecks,
 } from "lucide-react";
 import { useTheme, COLORS } from '@/hooks/useTheme'
 import { GradientText } from '@/components/ui/gradient-text'
@@ -79,15 +84,63 @@ interface SimNode extends KGNode {
   vy: number;
 }
 
+interface AvailableDoc {
+  id: string;
+  filename: string;
+  category: string;
+  status: string;
+  created_at: string;
+  file_size?: number;
+  chunk_count?: number;
+  extracted?: boolean;
+  node_count?: number;
+  edge_count?: number;
+}
+
+interface AvailableCase {
+  id: string;
+  title: string;
+  fault_type: string;
+  device_model: string;
+  status: string;
+  created_at: string;
+  extracted?: boolean;
+  node_count?: number;
+  edge_count?: number;
+}
+
+interface GraphSource {
+  id: string;
+  type: "case" | "document";
+  name: string;
+  detail: string;
+  node_count: number;
+  edge_count: number;
+}
+
+interface ExtractionTaskProgress {
+  status: string;
+  source: string;
+  total: number;
+  current: number;
+  progress: number;
+  success_count: number;
+  fail_count: number;
+  results: Array<Record<string, unknown>>;
+  current_doc?: string;
+  error?: string;
+}
+
 // Note: CYBER_* constants are now defined in COLORS object above
 // NODE_COLORS, EDGE_COLORS will be set dynamically based on theme
 
 const NODE_SIZES: Record<string, number> = {
-  device: 28,
-  fault: 20,
-  solution: 20,
-  procedure: 20,
-  standard: 18,
+  device: 22,
+  fault: 16,
+  solution: 16,
+  procedure: 16,
+  standard: 14,
+  person: 13,
 };
 
 const EDGE_DASH: Record<string, boolean> = {
@@ -104,6 +157,7 @@ const TYPE_LABELS: Record<string, string> = {
   solution: "解决方案",
   procedure: "操作流程",
   standard: "标准规范",
+  person: "人员",  // v23: 补上
 };
 
 const RELATION_LABELS: Record<string, string> = {
@@ -113,6 +167,29 @@ const RELATION_LABELS: Record<string, string> = {
   requires: "需要",
   complies_with: "符合",
 };
+
+// 兼容旧浏览器：roundRect polyfill
+function safeRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+    return;
+  }
+  // 手动绘制圆角矩形
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
 
 function drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
   ctx.beginPath();
@@ -211,11 +288,21 @@ function drawNode(
   ctx.shadowBlur = 0;
 
   if (transform.scale > 0.5) {
-    ctx.fillStyle = isDimmed ? "rgba(255,255,255,0.2)" : "#ffffff";
-    ctx.font = `bold ${Math.max(11, 13 * transform.scale)}px sans-serif`;
+    const fontSize = Math.max(9, 11 * transform.scale);
+    ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(node.name, sx, sy + size + 5 * transform.scale);
+
+    // 白色背景描边，让黑色文字在任何颜色节点上都清晰可读
+    const textY = sy + size + 5 * transform.scale;
+    const textWidth = ctx.measureText(node.name).width;
+    const padding = 3 * transform.scale;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    safeRoundRect(ctx, sx - textWidth / 2 - padding, textY - 1, textWidth + padding * 2, fontSize + 2, 3);
+    ctx.fill();
+
+    ctx.fillStyle = isDimmed ? "rgba(0,0,0,0.35)" : "#000000";
+    ctx.fillText(node.name, sx, textY);
   }
 
   ctx.restore();
@@ -282,6 +369,7 @@ export default function KnowledgeGraphPage() {
     solution: colors.CYBER_GREEN,
     procedure: colors.CYBER_YELLOW,
     standard: colors.CYBER_BLUE,
+    person: "#a78bfa",  // v23: 补上
   };
   
   const EDGE_COLORS: Record<string, string> = {
@@ -311,16 +399,33 @@ export default function KnowledgeGraphPage() {
   const [hoveredNode, setHoveredNode] = useState<SimNode | null>(null);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractSource, setExtractSource] = useState<"cases" | "documents">("cases");
+  const [availableDocs, setAvailableDocs] = useState<AvailableDoc[]>([]);
+  const [availableCases, setAvailableCases] = useState<AvailableCase[]>([]);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+  const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [taskProgress, setTaskProgress] = useState<ExtractionTaskProgress | null>(null);
+  const [sources, setSources] = useState<GraphSource[]>([]);
+  const [activeSource, setActiveSource] = useState<GraphSource | null>(null);
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editNode, setEditNode] = useState<{ id: string; name: string; type: string } | null>(null);
   const [newNodeName, setNewNodeName] = useState("");
   const [newNodeType, setNewNodeType] = useState("device");
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pathSourceId, setPathSourceId] = useState("");
+  const [pathTargetId, setPathTargetId] = useState("");
+  const [pathResult, setPathResult] = useState<string[] | null>(null);
+  const [pathEdges, setPathEdges] = useState<string[] | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simNodesRef = useRef<SimNode[]>([]);
   const animFrameRef = useRef<number>(0);
   const transformRef = useRef({ x: 0, y: 0, scale: 1 });
+  // v23 新增：避免 useEffect 因 selectedNode/hoveredNode 变化重启而重置 simNodesRef
+  const selectedNodeRef = useRef<KGNode | null>(null);
+  const hoveredNodeRef = useRef<KGNode | null>(null);
   const dragRef = useRef<{
     nodeId: string | null;
     offsetX: number;
@@ -333,6 +438,14 @@ export default function KnowledgeGraphPage() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    function onChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
   const fetchGraph = useCallback(async () => {
@@ -354,6 +467,138 @@ export default function KnowledgeGraphPage() {
     }
   }, []);
 
+  const fetchAvailableDocs = useCallback(async () => {
+    try {
+      const res = await api.get<AvailableDoc[]>("/knowledge-graph/available-documents");
+      setAvailableDocs(res.data || []);
+    } catch {
+      setAvailableDocs([]);
+    }
+  }, []);
+
+  const fetchAvailableCases = useCallback(async () => {
+    try {
+      const res = await api.get<AvailableCase[]>("/knowledge-graph/available-cases");
+      setAvailableCases(res.data || []);
+    } catch {
+      setAvailableCases([]);
+    }
+  }, []);
+
+  const fetchSources = useCallback(async () => {
+    try {
+      const res = await api.get<GraphSource[]>("/knowledge-graph/sources");
+      setSources(res.data || []);
+    } catch {
+      setSources([]);
+    }
+  }, []);
+
+  const focusNode = useCallback((nodeId: string) => {
+    const node = simNodesRef.current.find((n) => n.id === nodeId);
+    if (!node) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const w = canvas.parentElement?.clientWidth || 800;
+    const h = canvas.parentElement?.clientHeight || 600;
+    transformRef.current = {
+      x: w / 2 - node.x,
+      y: h / 2 - node.y,
+      scale: 1.5,
+    };
+    setSelectedNode(node);
+  }, []);
+
+  const searchPath = useCallback(() => {
+    if (!pathSourceId || !pathTargetId || !graphDataRef.current) {
+      setPathResult(null);
+      setPathEdges(null);
+      return;
+    }
+    const data = graphDataRef.current;
+    const adj = new Map<string, string[]>();
+    const edgeMap = new Map<string, { source: string; target: string; id: string }>();
+    for (const edge of data.edges) {
+      if (!adj.has(edge.source)) adj.set(edge.source, []);
+      if (!adj.has(edge.target)) adj.set(edge.target, []);
+      adj.get(edge.source)!.push(edge.target);
+      adj.get(edge.target)!.push(edge.source);
+      edgeMap.set(`${edge.source}-${edge.target}`, edge);
+      edgeMap.set(`${edge.target}-${edge.source}`, edge);
+    }
+
+    const visited = new Set<string>();
+    const prev = new Map<string, string | null>();
+    const queue: string[] = [pathSourceId];
+    visited.add(pathSourceId);
+    prev.set(pathSourceId, null);
+
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      if (cur === pathTargetId) break;
+      const neighbors = adj.get(cur) || [];
+      for (const nb of neighbors) {
+        if (!visited.has(nb)) {
+          visited.add(nb);
+          prev.set(nb, cur);
+          queue.push(nb);
+        }
+      }
+    }
+
+    if (!visited.has(pathTargetId)) {
+      setPathResult([]);
+      setPathEdges(null);
+      return;
+    }
+
+    const path: string[] = [];
+    const pathEdgeIds: string[] = [];
+    let step: string | null = pathTargetId;
+    while (step) {
+      path.unshift(step);
+      const p = prev.get(step);
+      if (p) {
+        const edge = edgeMap.get(`${p}-${step}`) || edgeMap.get(`${step}-${p}`);
+        if (edge) pathEdgeIds.unshift(edge.id);
+      }
+      step = p;
+    }
+    setPathResult(path);
+    setPathEdges(pathEdgeIds);
+
+    const startNode = simNodesRef.current.find(n => n.id === pathSourceId);
+    if (startNode) {
+      setSelectedNode(startNode);
+      focusNode(pathSourceId);
+    }
+  }, [pathSourceId, pathTargetId, focusNode]);
+
+  const exportGraphImage = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = 'knowledge-graph.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }, []);
+
+  const relayoutGraph = useCallback(() => {
+    const nodes = simNodesRef.current;
+    if (!nodes.length) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const w = canvas.parentElement?.clientWidth || 800;
+    const h = canvas.parentElement?.clientHeight || 600;
+    for (const node of nodes) {
+      node.x = (Math.random() - 0.5) * w * 0.6;
+      node.y = (Math.random() - 0.5) * h * 0.6;
+      node.vx = 0;
+      node.vy = 0;
+    }
+    transformRef.current = { x: w / 2, y: h / 2, scale: 1 };
+  }, []);
+
   const exportGraph = useCallback(() => {
     if (!graphData) return;
     const dataStr = JSON.stringify(graphData, null, 2);
@@ -365,6 +610,32 @@ export default function KnowledgeGraphPage() {
     a.click();
     URL.revokeObjectURL(url);
   }, [graphData]);
+
+  const clearGraph = useCallback(async () => {
+    if (!confirm("确定要清空整个知识图谱吗？\n所有节点和关系将被永久删除，此操作不可撤销！")) return;
+    try {
+      await api.delete("/knowledge-graph/graph");
+      await Promise.all([fetchGraph(), fetchStats()]);
+      setSelectedNode(null);
+      setNodeDetail(null);
+      setActiveSource(null);
+      setSearchResults([]);
+      alert("图谱已清空");
+    } catch (err) {
+      console.error(err);
+      alert("清空失败");
+    }
+  }, [fetchGraph, fetchStats]);
+
+  const toggleFullscreen = useCallback(() => {
+    const container = canvasRef.current?.parentElement;
+    if (!container) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      container.requestFullscreen();
+    }
+  }, []);
 
   const resetView = useCallback(() => {
     const canvas = canvasRef.current;
@@ -431,11 +702,20 @@ export default function KnowledgeGraphPage() {
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await Promise.all([fetchGraph(), fetchStats()]);
+      try {
+        await Promise.all([fetchGraph(), fetchStats(), fetchAvailableDocs(), fetchAvailableCases(), fetchSources()]);
+      } catch (e) {
+        console.error("Knowledge graph init failed:", e);
+      }
       setLoading(false);
     }
     init();
-  }, [fetchGraph, fetchStats]);
+  }, [fetchGraph, fetchStats, fetchAvailableDocs, fetchAvailableCases, fetchSources]);
+
+  // v23 修复：把 selectedNode/hoveredNode 同步到 ref，
+  // 避免 useEffect 因 hover/click 重启而重置 simNodesRef.current
+  useEffect(() => { selectedNodeRef.current = selectedNode; }, [selectedNode]);
+  useEffect(() => { hoveredNodeRef.current = hoveredNode; }, [hoveredNode]);
 
   useEffect(() => {
     if (!graphData) return;
@@ -458,8 +738,8 @@ export default function KnowledgeGraphPage() {
 
     simNodesRef.current = graphData.nodes.map((n) => ({
       ...n,
-      x: (Math.random() - 0.5) * w * 0.6,
-      y: (Math.random() - 0.5) * h * 0.6,
+      x: (Math.random() - 0.5) * w * 0.85,
+      y: (Math.random() - 0.5) * h * 0.85,
       vx: 0,
       vy: 0,
     }));
@@ -467,11 +747,11 @@ export default function KnowledgeGraphPage() {
     const nodeMap = new Map(simNodesRef.current.map((n) => [n.id, n]));
     const edges = graphData.edges;
 
-    const REPULSION = 8000;
-    const SPRING_K = 0.005;
-    const SPRING_LEN = 120;
-    const DAMPING = 0.85;
-    const CENTER_GRAVITY = 0.01;
+    const REPULSION = 25000;
+    const SPRING_K = 0.003;
+    const SPRING_LEN = 180;
+    const DAMPING = 0.82;
+    const CENTER_GRAVITY = 0.008;
     const ALPHA_DECAY = 0.998;
     let alpha = 1.0;
 
@@ -534,11 +814,10 @@ export default function KnowledgeGraphPage() {
       ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      ctx.fillStyle = "rgba(10, 10, 26, 1)";
+      ctx.fillStyle = isLight ? "rgba(248, 250, 252, 1)" : "rgba(10, 10, 26, 1)";
       ctx.fillRect(0, 0, w, h);
 
       const gridStep = 40;
-      const isLight = theme === 'light';
       ctx.strokeStyle = isLight ? 'rgba(59, 130, 246, 0.15)' : 'rgba(99, 102, 241, 0.15)';
       ctx.lineWidth = 0.5;
       const t = transformRef.current;
@@ -561,15 +840,21 @@ export default function KnowledgeGraphPage() {
 
       const highlightedIds = new Set<string>();
       const highlightedEdges = new Set<string>();
-      if (selectedNode) {
-        highlightedIds.add(selectedNode.id);
+      const sel = selectedNodeRef.current;  // v23: 从 ref 读最新值
+      if (sel) {
+        highlightedIds.add(sel.id);
         for (const edge of edges) {
-          if (edge.source === selectedNode.id || edge.target === selectedNode.id) {
+          if (edge.source === sel.id || edge.target === sel.id) {
             highlightedIds.add(edge.source);
             highlightedIds.add(edge.target);
             highlightedEdges.add(edge.id);
           }
         }
+      }
+      // v28: 路径搜索高亮
+      if (pathResult && pathResult.length > 0) {
+        for (const nid of pathResult) highlightedIds.add(nid);
+        if (pathEdges) for (const eid of pathEdges) highlightedEdges.add(eid);
       }
 
       for (const edge of edges) {
@@ -587,22 +872,23 @@ export default function KnowledgeGraphPage() {
         drawNode(ctx, node, isHL, isDim, t, NODE_COLORS);
       }
 
-      if (hoveredNode && !selectedNode) {
-        const hx = hoveredNode.x * t.scale + t.x;
-        const hy = hoveredNode.y * t.scale + t.y;
+      const hov = hoveredNodeRef.current;  // v23: 从 ref 读最新值
+      if (hov && !sel) {
+        const hx = hov.x * t.scale + t.x;
+        const hy = hov.y * t.scale + t.y;
         ctx.save();
         ctx.fillStyle = colors.cardBg;
-        ctx.strokeStyle = NODE_COLORS[hoveredNode.type] || colors.textSecondary;
+        ctx.strokeStyle = NODE_COLORS[hov.type] || colors.textSecondary;
         ctx.lineWidth = 1.5;
-        const label = `${hoveredNode.name} (${TYPE_LABELS[hoveredNode.type] || hoveredNode.type})`;
+        const label = `${hov.name} (${TYPE_LABELS[hov.type] || hov.type})`;
         ctx.font = "bold 13px sans-serif";
         const tw = ctx.measureText(label).width;
         const px = 10;
         const py = 5;
         const bx = hx - tw / 2 - px;
-        const by = hy - (NODE_SIZES[hoveredNode.type] || 16) * t.scale - 32;
+        const by = hy - (NODE_SIZES[hov.type] || 16) * t.scale - 32;
         ctx.beginPath();
-        ctx.roundRect(bx, by, tw + px * 2, 26, 6);
+        safeRoundRect(ctx, bx, by, tw + px * 2, 26, 6);
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = colors.textPrimary;
@@ -612,6 +898,9 @@ export default function KnowledgeGraphPage() {
         ctx.restore();
       }
 
+      const currentZoom = Math.round(transformRef.current.scale * 100);
+      if (currentZoom !== zoomLevel) setZoomLevel(currentZoom);
+
       animFrameRef.current = requestAnimationFrame(render);
     }
 
@@ -620,7 +909,7 @@ export default function KnowledgeGraphPage() {
     return () => {
       cancelAnimationFrame(animFrameRef.current);
     };
-  }, [graphData, selectedNode, hoveredNode]);
+  }, [graphData, pathResult, pathEdges]);  // v28: 路径搜索高亮触发重绘
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -830,6 +1119,19 @@ export default function KnowledgeGraphPage() {
     canvas.addEventListener("touchmove", onTouchMove, { passive: false });
     canvas.addEventListener("touchend", onTouchEnd, { passive: false });
 
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        const t = transformRef.current;
+        t.scale = Math.min(5, t.scale * 1.2);
+      } else if (e.ctrlKey && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        const t = transformRef.current;
+        t.scale = Math.max(0.1, t.scale * 0.8);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+
     return () => {
       canvas.removeEventListener("mousedown", onMouseDown);
       canvas.removeEventListener("mousemove", onMouseMove);
@@ -839,6 +1141,7 @@ export default function KnowledgeGraphPage() {
       canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("touchmove", onTouchMove);
       canvas.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener('keydown', onKeyDown);
     };
   }, []);
 
@@ -859,64 +1162,170 @@ export default function KnowledgeGraphPage() {
       return;
     }
     try {
-      const res = await api.get<KGNode[]>("/knowledge-graph/search", {
+      const res = await api.get("/knowledge-graph/search", {
         params: { query: searchQuery },
       });
-      setSearchResults(res.data || []);
+      const data = res.data as Record<string, unknown>;
+      setSearchResults((data.nodes as KGNode[]) || []);
     } catch {
       setSearchResults([]);
     }
   }, [searchQuery]);
 
-  const handleExtractAll = useCallback(async () => {
+  const pollExtractionProgress = useCallback(async (tid: string) => {
+    try {
+      const res = await api.get<ExtractionTaskProgress>(`/knowledge-graph/extraction-progress/${tid}`);
+      const progress = res.data;
+      setTaskProgress(progress);
+      setExtractProgress(progress.progress);
+
+      if (progress.status === "completed") {
+        setExtracting(false);
+        await Promise.all([fetchGraph(), fetchStats(), fetchAvailableCases(), fetchAvailableDocs(), fetchSources()]);
+        setTimeout(() => {
+          setTaskId(null);
+          setTaskProgress(null);
+          setExtractProgress(0);
+        }, 3000);
+        return;
+      }
+
+      setTimeout(() => pollExtractionProgress(tid), 2000);
+    } catch (err: unknown) {
+      const is404 = err && typeof err === "object" && "response" in err &&
+        (err as { response?: { status?: number } }).response?.status === 404;
+      if (is404) {
+        setExtractError("抽取任务已丢失（服务可能已重启），请重新开始抽取");
+        setExtracting(false);
+        setTaskId(null);
+        setTaskProgress(null);
+        return;
+      }
+      setTimeout(() => pollExtractionProgress(tid), 3000);
+    }
+  }, [fetchGraph, fetchStats, fetchAvailableCases, fetchAvailableDocs, fetchSources]);
+
+  const startExtraction = useCallback(async (endpoint: string, body?: unknown) => {
     if (extracting) return;
     setExtracting(true);
     setExtractProgress(0);
     setExtractError(null);
+    setTaskId(null);
+    setTaskProgress(null);
+
     try {
-      const progressInterval = setInterval(() => {
-        setExtractProgress((p) => {
-          if (p >= 90) {
-            clearInterval(progressInterval);
-            return 90;
-          }
-          return p + 5;
-        });
-      }, 1000);
-
-      const endpoint = extractSource === "documents"
-        ? "/knowledge-graph/extract-documents"
-        : "/knowledge-graph/extract-all";
-      await api.post(endpoint);
-
-      clearInterval(progressInterval);
-      setExtractProgress(100);
-
-      await Promise.all([fetchGraph(), fetchStats()]);
-    } catch {
-      setExtractError("实体抽取失败，请检查LLM服务是否可用");
-    } finally {
-      setTimeout(() => {
+      const res = await api.post(endpoint, body);
+      const tid = res.data?.task_id;
+      if (tid) {
+        setTaskId(tid);
+        await pollExtractionProgress(tid);
+      } else {
         setExtracting(false);
-        setExtractProgress(0);
-      }, 1500);
+        await Promise.all([fetchGraph(), fetchStats()]);
+      }
+    } catch (err: unknown) {
+      let errorMsg = "实体抽取失败，请检查LLM服务是否可用";
+      if (err && typeof err === "object" && "response" in err) {
+        const resp = (err as { response?: { data?: { detail?: string; message?: string } } }).response;
+        if (resp?.data?.detail) {
+          errorMsg = resp.data.detail;
+        } else if (resp?.data?.message) {
+          errorMsg = resp.data.message;
+        }
+      } else if (err instanceof Error) {
+        errorMsg = err.message;
+      }
+      setExtractError(errorMsg);
+      setExtracting(false);
     }
-  }, [extracting, extractSource, fetchGraph, fetchStats]);
+  }, [extracting, pollExtractionProgress, fetchGraph, fetchStats]);
 
-  const focusNode = useCallback((nodeId: string) => {
-    const node = simNodesRef.current.find((n) => n.id === nodeId);
-    if (!node) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const w = canvas.parentElement?.clientWidth || 800;
-    const h = canvas.parentElement?.clientHeight || 600;
-    transformRef.current = {
-      x: w / 2 - node.x,
-      y: h / 2 - node.y,
-      scale: 1.5,
-    };
-    setSelectedNode(node);
+  const handleExtractAll = useCallback(async () => {
+    const endpoint = extractSource === "documents"
+      ? "/knowledge-graph/extract-documents"
+      : "/knowledge-graph/extract-all";
+    await startExtraction(endpoint);
+  }, [extractSource, startExtraction]);
+
+  const handleExtractSelected = useCallback(async () => {
+    if (selectedDocIds.size === 0) return;
+    await startExtraction("/knowledge-graph/extract-selected", { document_ids: Array.from(selectedDocIds) });
+  }, [selectedDocIds, startExtraction]);
+
+  const toggleDocSelection = useCallback((docId: string) => {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) {
+        next.delete(docId);
+      } else {
+        next.add(docId);
+      }
+      return next;
+    });
   }, []);
+
+  const toggleSelectAllDocs = useCallback(() => {
+    if (selectedDocIds.size === availableDocs.length) {
+      setSelectedDocIds(new Set());
+    } else {
+      setSelectedDocIds(new Set(availableDocs.map((d) => d.id)));
+    }
+  }, [selectedDocIds.size, availableDocs]);
+
+  const toggleCaseSelection = useCallback((caseId: string) => {
+    setSelectedCaseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(caseId)) {
+        next.delete(caseId);
+      } else {
+        next.add(caseId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllCases = useCallback(() => {
+    if (selectedCaseIds.size === availableCases.length) {
+      setSelectedCaseIds(new Set());
+    } else {
+      setSelectedCaseIds(new Set(availableCases.map((c) => c.id)));
+    }
+  }, [selectedCaseIds.size, availableCases]);
+
+  const handleExtractSelectedCases = useCallback(async () => {
+    if (selectedCaseIds.size === 0) return;
+    await startExtraction("/knowledge-graph/extract-selected-cases", { case_ids: Array.from(selectedCaseIds) });
+  }, [selectedCaseIds, startExtraction]);
+
+  const handleReprocessDocs = useCallback(async () => {
+    if (selectedDocIds.size === 0) return;
+    await startExtraction("/knowledge-graph/reprocess-documents", { document_ids: Array.from(selectedDocIds) });
+  }, [selectedDocIds, startExtraction]);
+
+  const formatFileSize = useCallback((bytes: number) => {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  }, []);
+
+  const handleSourceFilter = useCallback(async (source: GraphSource | null) => {
+    if (!source) {
+      setActiveSource(null);
+      await fetchGraph();
+      return;
+    }
+    try {
+      const res = await api.get<GraphData>("/knowledge-graph/graph-by-source", {
+        params: { source_id: source.id, source_type: source.type },
+      });
+      setActiveSource(source);
+      setGraphData(res.data);
+      graphDataRef.current = res.data;
+    } catch {
+      setActiveSource(null);
+      await fetchGraph();
+    }
+  }, [fetchGraph]);
 
   const openEditDialog = (node: SimNode) => {
     setEditNode({ id: node.id, name: node.name, type: node.type });
@@ -930,16 +1339,13 @@ export default function KnowledgeGraphPage() {
     setEditDialogOpen(true);
   };
 
-  const isEmpty = graphData && graphData.nodes.length === 0 && graphData.edges.length === 0;
+  const isEmpty = (!graphData) || (graphData.nodes.length === 0 && graphData.edges.length === 0);
 
   if (loading) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#3b82f6] to-[#2563eb]" />
-          <div className="h-8 w-48 rounded-lg bg-muted" />
-        </div>
-        <div className="h-[600px] rounded-2xl bg-gradient-to-br from-[#151528] to-[#1a1a2e] border border-[rgba(59,130,246,0.2)]" />
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="w-12 h-12 border-4 border-muted border-t-primary rounded-full animate-spin" />
+        <p className="text-muted-foreground text-sm">加载知识图谱...</p>
       </div>
     );
   }
@@ -1025,29 +1431,167 @@ export default function KnowledgeGraphPage() {
                   ? "从已审核通过的检修案例中抽取设备、故障、解决方案等实体"
                   : "从已审核的知识文档中抽取设备、故障、操作流程、标准规范等实体"}
               </p>
-              <Button
-                onClick={handleExtractAll}
-                disabled={extracting}
-                size="lg"
-                className="bg-gradient-to-r from-[#6366f1] to-[#4f46e5] hover:from-[#4f46e5] hover:to-[#4338ca] shadow-xl shadow-[rgba(99,102,241,0.4)] transition-all"
-              >
-                {extracting ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    抽取中...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="mr-2 h-5 w-5" />
-                    {extractSource === "cases" ? "从案例抽取实体" : "从文档抽取实体"}
-                  </>
+
+              {extractSource === "cases" && availableCases.length > 0 && (
+                <div className="w-full max-w-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">已选 {selectedCaseIds.size}/{availableCases.length} 个案例</span>
+                    <button
+                      onClick={toggleSelectAllCases}
+                      className="text-xs flex items-center gap-1 hover:opacity-80 transition-colors"
+                      style={{ color: isLight ? colors.CYBER_BLUE : '#6366f1' }}
+                    >
+                      <CheckSquare className="h-3 w-3" />
+                      {selectedCaseIds.size === availableCases.length ? '取消全选' : '全选'}
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1 rounded-lg p-2" style={{
+                    background: isLight ? '#f8fafc' : 'rgba(10,10,30,0.5)',
+                    border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(99,102,241,0.15)'}`
+                  }}>
+                    {availableCases.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:opacity-80 transition-colors"
+                        style={{ background: selectedCaseIds.has(c.id) ? (isLight ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)') : 'transparent' }}
+                      >
+                        <Checkbox
+                          checked={selectedCaseIds.has(c.id)}
+                          onCheckedChange={() => toggleCaseSelection(c.id)}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="text-xs truncate flex-1" style={{ color: isLight ? '#1e293b' : '#e8e8e8' }}>{c.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {extractSource === "documents" && availableDocs.length > 0 && (
+                <div className="w-full max-w-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">已选 {selectedDocIds.size}/{availableDocs.length} 个文档</span>
+                    <button
+                      onClick={toggleSelectAllDocs}
+                      className="text-xs flex items-center gap-1 hover:opacity-80 transition-colors"
+                      style={{ color: isLight ? colors.CYBER_BLUE : '#6366f1' }}
+                    >
+                      <CheckSquare className="h-3 w-3" />
+                      {selectedDocIds.size === availableDocs.length ? '取消全选' : '全选'}
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1 rounded-lg p-2" style={{
+                    background: isLight ? '#f8fafc' : 'rgba(10,10,30,0.5)',
+                    border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(99,102,241,0.15)'}`
+                  }}>
+                    {availableDocs.map((doc) => (
+                      <label
+                        key={doc.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:opacity-80 transition-colors"
+                        style={{ background: selectedDocIds.has(doc.id) ? (isLight ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)') : 'transparent' }}
+                      >
+                        <Checkbox
+                          checked={selectedDocIds.has(doc.id)}
+                          onCheckedChange={() => toggleDocSelection(doc.id)}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="text-xs truncate flex-1" style={{ color: isLight ? '#1e293b' : '#e8e8e8' }}>{doc.filename}</span>
+                        {doc.chunk_count === 0 && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0" style={{ borderColor: '#f59e0b', color: '#f59e0b' }}>
+                            无分块
+                          </Badge>
+                        )}
+                        {doc.extracted && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0" style={{ borderColor: '#10b981', color: '#10b981' }}>
+                            已抽取
+                          </Badge>
+                        )}
+                        <Badge variant="outline" className="text-[9px] px-1 py-0" style={{ borderColor: isLight ? '#cbd5e1' : 'rgba(99,102,241,0.3)' }}>
+                          {doc.category}
+                        </Badge>
+                      </label>
+                    ))}
+                  </div>
+                  {availableDocs.some(d => d.chunk_count === 0) && (
+                    <p className="text-[10px] px-1" style={{ color: '#f59e0b' }}>
+                      ⚠ 标记"无分块"的文档需要先重新处理才能抽取实体
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleExtractAll}
+                  disabled={extracting}
+                  size="lg"
+                  className="bg-gradient-to-r from-[#6366f1] to-[#4f46e5] hover:from-[#4f46e5] hover:to-[#4338ca] shadow-xl shadow-[rgba(99,102,241,0.4)] transition-all"
+                >
+                  {extracting ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      抽取中...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="mr-2 h-5 w-5" />
+                      {extractSource === "cases" ? "全部案例抽取" : "全部文档抽取"}
+                    </>
+                  )}
+                </Button>
+                {extractSource === "cases" && selectedCaseIds.size > 0 && (
+                  <Button
+                    onClick={handleExtractSelectedCases}
+                    disabled={extracting}
+                    size="lg"
+                    variant="outline"
+                    className="border-[rgba(99,102,241,0.5)] hover:bg-[rgba(99,102,241,0.1)]"
+                  >
+                    <ListChecks className="mr-2 h-5 w-5" />
+                    抽取选中({selectedCaseIds.size})
+                  </Button>
                 )}
-              </Button>
+                {extractSource === "documents" && selectedDocIds.size > 0 && (
+                  <Button
+                    onClick={handleExtractSelected}
+                    disabled={extracting}
+                    size="lg"
+                    variant="outline"
+                    className="border-[rgba(99,102,241,0.5)] hover:bg-[rgba(99,102,241,0.1)]"
+                  >
+                    <ListChecks className="mr-2 h-5 w-5" />
+                    抽取选中({selectedDocIds.size})
+                  </Button>
+                )}
+                {extractSource === "documents" && selectedDocIds.size > 0 && (
+                  <Button
+                    onClick={handleReprocessDocs}
+                    disabled={extracting}
+                    size="lg"
+                    variant="outline"
+                    className="border-[rgba(245,158,11,0.5)] hover:bg-[rgba(245,158,11,0.1)] text-[#f59e0b]"
+                  >
+                    <RefreshCw className="mr-2 h-5 w-5" />
+                    重新处理({selectedDocIds.size})
+                  </Button>
+                )}
+              </div>
               {extracting && (
                 <div className="w-72 space-y-2">
                   <Progress value={extractProgress} className="h-2" />
                   <p className="text-xs text-muted-foreground text-center">
-                    {extractProgress >= 100 ? "抽取完成" : `正在抽取... ${Math.round(extractProgress)}%`}
+                    {taskProgress?.status === "completed"
+                      ? taskProgress.source === "reprocess"
+                        ? `处理完成！成功${taskProgress.success_count}个，失败${taskProgress.fail_count}个`
+                        : `抽取完成！成功${taskProgress.success_count}个，失败${taskProgress.fail_count}个`
+                      : taskProgress
+                        ? taskProgress.current_doc
+                          ? `${taskProgress.current_doc} (${Math.round(extractProgress)}%)`
+                          : taskProgress.source === "reprocess"
+                            ? `正在处理... ${taskProgress.current}/${taskProgress.total} (${Math.round(extractProgress)}%)`
+                            : `正在抽取... ${taskProgress.current}/${taskProgress.total} (${Math.round(extractProgress)}%)`
+                        : `正在启动... ${Math.round(extractProgress)}%`
+                    }
                   </p>
                 </div>
               )}
@@ -1093,16 +1637,34 @@ export default function KnowledgeGraphPage() {
           <Button size="sm" variant="outline" onClick={resetView} className="border-[rgba(59,130,246,0.5)] hover:bg-[rgba(59,130,246,0.1)]">
             <RefreshCw className="mr-1 h-4 w-4" />
             重置视图
+            </Button>
+            <Button size="sm" variant="outline" onClick={relayoutGraph} className="border-[rgba(99,102,241,0.5)] hover:bg-[rgba(99,102,241,0.1)]">
+              <RefreshCw className="mr-1 h-4 w-4" />
+              重排布局
+            </Button>
+            <Button size="sm" variant="outline" onClick={toggleFullscreen} className="border-[rgba(99,102,241,0.5)] hover:bg-[rgba(99,102,241,0.1)]">
+            {isFullscreen ? <Minimize2 className="mr-1 h-4 w-4" /> : <Maximize2 className="mr-1 h-4 w-4" />}
+            {isFullscreen ? '退出全屏' : '全屏'}
           </Button>
           <Button size="sm" variant="outline" onClick={exportGraph} className="border-[rgba(59,130,246,0.5)] hover:bg-[rgba(59,130,246,0.1)]">
             <Download className="mr-1 h-4 w-4" />
             导出
           </Button>
+          <Button size="sm" variant="outline" onClick={exportGraphImage} className="border-[rgba(59,130,246,0.5)] hover:bg-[rgba(59,130,246,0.1)]">
+            <Download className="mr-1 h-4 w-4" />
+            导出图片
+          </Button>
           {isAdmin && (
+            <>
             <Button size="sm" onClick={openAddDialog} className="bg-[#6366f1] hover:bg-[#4f46e5]">
               <Plus className="mr-1 h-4 w-4" />
               添加节点
             </Button>
+            <Button size="sm" variant="outline" onClick={clearGraph} className="border-[rgba(239,68,68,0.5)] text-[#ef4444] hover:bg-[rgba(239,68,68,0.1)]">
+              <Trash2 className="mr-1 h-4 w-4" />
+              清空图谱
+            </Button>
+            </>
           )}
         </div>
       </div>
@@ -1137,11 +1699,11 @@ export default function KnowledgeGraphPage() {
       {/* Main Content */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row gap-4">
         {/* Graph Canvas */}
-        <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl depth-shadow-lg" style={{
+        <div className="relative min-w-0 flex-1 overflow-hidden rounded-2xl depth-shadow-lg min-h-[400px]" style={{
           background: isLight ? '#f8fafc' : 'linear-gradient(180deg, rgba(10,10,26,0.95) 0%, rgba(15,15,35,0.95) 100%)',
           border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(59,130,246,0.3)'}`
         }}>
-          <canvas ref={canvasRef} className="h-full w-full" style={{ cursor: "grab", touchAction: "none" }} />
+          <canvas ref={canvasRef} className="h-full w-full" style={{ cursor: "grab", touchAction: "none", display: 'block' }} />
 
           {/* Legend */}
           <div className="absolute bottom-4 left-4 flex items-center gap-3 flex-wrap max-w-[calc(100%-2rem)]">
@@ -1173,6 +1735,37 @@ export default function KnowledgeGraphPage() {
             <span className="mr-3">拖拽: 节点/画布</span>
             <span className="mr-3">滚轮: 缩放</span>
             <span>点击: 选中</span>
+          </div>
+
+          {/* Zoom Controls */}
+          <div className="absolute bottom-14 right-4 flex flex-col items-center gap-1 rounded-xl p-1 shadow-lg backdrop-blur-lg z-10" style={{
+            background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(15,15,35,0.9)',
+            border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(99,102,241,0.3)'}`
+          }}>
+            <button
+              onClick={() => { const t = transformRef.current; t.scale = Math.min(5, t.scale * 1.2); }}
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80 transition-colors text-sm font-bold"
+              style={{ color: isLight ? '#1e293b' : '#f0f0f0' }}
+            >+</button>
+            <span className="text-xs font-mono px-2 py-0.5" style={{ color: isLight ? '#64748b' : '#9090a0' }}>
+              {zoomLevel}%
+            </span>
+            <button
+              onClick={() => { const t = transformRef.current; t.scale = Math.max(0.1, t.scale * 0.8); }}
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80 transition-colors text-sm font-bold"
+              style={{ color: isLight ? '#1e293b' : '#f0f0f0' }}
+            >-</button>
+            <button
+              onClick={() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const w = canvas.parentElement?.clientWidth || 800;
+                const h = canvas.parentElement?.clientHeight || 600;
+                transformRef.current = { x: w / 2, y: h / 2, scale: 1 };
+              }}
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80 transition-colors text-xs"
+              style={{ color: isLight ? '#64748b' : '#9090a0' }}
+            >⟲</button>
           </div>
 
           {/* Selected Node Panel */}
@@ -1221,7 +1814,8 @@ export default function KnowledgeGraphPage() {
                       编辑
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => deleteNode(selectedNode.id)} className="border-[rgba(239,68,68,0.5)] text-[#ef4444] hover:bg-[rgba(239,68,68,0.1)]">
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="mr-1 h-3 w-3" />
+                      删除
                     </Button>
                   </>
                 )}
@@ -1231,7 +1825,7 @@ export default function KnowledgeGraphPage() {
         </div>
 
         {/* Side Panel */}
-        <div className="flex w-full lg:w-72 flex-shrink-0 flex-col gap-3">
+        <div className={`flex w-full flex-shrink-0 flex-col gap-3 ${isFullscreen ? 'hidden' : 'lg:w-72'}`}>
           {/* Search */}
           <Card className="glass-card depth-shadow-lg" style={{
             background: isLight ? '#ffffff' : 'rgba(15,15,30,0.9)',
@@ -1322,30 +1916,342 @@ export default function KnowledgeGraphPage() {
                     文档
                   </button>
                 </div>
+
+                {extractSource === "documents" && availableDocs.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        已选 {selectedDocIds.size}/{availableDocs.length} 个文档
+                      </span>
+                      <button
+                        onClick={toggleSelectAllDocs}
+                        className="text-xs flex items-center gap-1 hover:opacity-80 transition-colors"
+                        style={{ color: isLight ? colors.CYBER_BLUE : '#6366f1' }}
+                      >
+                        <CheckSquare className="h-3 w-3" />
+                        {selectedDocIds.size === availableDocs.length ? '取消全选' : '全选'}
+                      </button>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg p-1" style={{ 
+                      background: isLight ? '#f8fafc' : 'rgba(10,10,30,0.5)',
+                      border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(99,102,241,0.15)'}`
+                    }}>
+                      {availableDocs.map((doc) => (
+                        <label
+                          key={doc.id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:opacity-80 transition-colors"
+                          style={{ background: selectedDocIds.has(doc.id) ? (isLight ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)') : 'transparent' }}
+                        >
+                          <Checkbox
+                            checked={selectedDocIds.has(doc.id)}
+                            onCheckedChange={() => toggleDocSelection(doc.id)}
+                            className="h-3.5 w-3.5"
+                          />
+                          <span className="text-xs truncate flex-1" style={{ color: isLight ? '#1e293b' : '#e8e8e8' }}>
+                            {doc.filename}
+                          </span>
+                          {doc.chunk_count === 0 && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0" style={{ borderColor: '#f59e0b', color: '#f59e0b' }}>
+                              无分块
+                            </Badge>
+                          )}
+                          {doc.extracted && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0" style={{ borderColor: '#10b981', color: '#10b981' }}>
+                              已抽取
+                            </Badge>
+                          )}
+                          <span className="text-[9px] shrink-0" style={{ color: isLight ? '#94a3b8' : '#606080' }}>
+                            {doc.file_size ? formatFileSize(doc.file_size) : ''}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {availableDocs.some(d => d.chunk_count === 0) && (
+                      <p className="text-[10px] px-1" style={{ color: '#f59e0b' }}>
+                        ⚠ "无分块"文档需先重新处理
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {extractSource === "documents" && availableDocs.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">暂无可抽取的文档</p>
+                )}
+
+                {extractSource === "cases" && availableCases.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        已选 {selectedCaseIds.size}/{availableCases.length} 个案例
+                      </span>
+                      <button
+                        onClick={toggleSelectAllCases}
+                        className="text-xs flex items-center gap-1 hover:opacity-80 transition-colors"
+                        style={{ color: isLight ? colors.CYBER_BLUE : '#6366f1' }}
+                      >
+                        <CheckSquare className="h-3 w-3" />
+                        {selectedCaseIds.size === availableCases.length ? '取消全选' : '全选'}
+                      </button>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg p-1" style={{
+                      background: isLight ? '#f8fafc' : 'rgba(10,10,30,0.5)',
+                      border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(99,102,241,0.15)'}`
+                    }}>
+                      {availableCases.map((c) => (
+                        <label
+                          key={c.id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:opacity-80 transition-colors"
+                          style={{ background: selectedCaseIds.has(c.id) ? (isLight ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.15)') : 'transparent' }}
+                        >
+                          <Checkbox
+                            checked={selectedCaseIds.has(c.id)}
+                            onCheckedChange={() => toggleCaseSelection(c.id)}
+                            className="h-3.5 w-3.5"
+                          />
+                          <span className="text-xs truncate flex-1" style={{ color: isLight ? '#1e293b' : '#e8e8e8' }}>
+                            {c.title}
+                          </span>
+                          {c.extracted && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0" style={{ borderColor: '#10b981', color: '#10b981' }}>
+                              已抽取
+                            </Badge>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {extractSource === "cases" && availableCases.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">暂无可抽取的案例</p>
+                )}
+
                 <p className="text-xs text-muted-foreground">
                   {extractSource === "cases"
                     ? "从已审核案例抽取设备、故障、解决方案"
                     : "从已审核文档抽取设备、故障、流程、规范"}
                 </p>
-                <Button
-                  onClick={handleExtractAll}
-                  disabled={extracting}
-                  className="w-full bg-gradient-to-r from-[#6366f1] to-[#4f46e5] hover:from-[#4f46e5] hover:to-[#4338ca]"
-                >
-                  <Zap className="mr-2 h-4 w-4" />
-                  {extracting ? "抽取中..." : extractSource === "cases" ? "从案例抽取" : "从文档抽取"}
-                </Button>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleExtractAll}
+                    disabled={extracting}
+                    className="flex-1 bg-gradient-to-r from-[#6366f1] to-[#4f46e5] hover:from-[#4f46e5] hover:to-[#4338ca]"
+                  >
+                    <Zap className="mr-1 h-4 w-4" />
+                    {extracting ? "抽取中..." : "全部抽取"}
+                  </Button>
+                  {extractSource === "documents" && selectedDocIds.size > 0 && (
+                    <Button
+                      onClick={handleExtractSelected}
+                      disabled={extracting}
+                      variant="outline"
+                      className="border-[rgba(99,102,241,0.5)] hover:bg-[rgba(99,102,241,0.1)]"
+                    >
+                      <ListChecks className="mr-1 h-4 w-4" />
+                      抽取选中({selectedDocIds.size})
+                    </Button>
+                  )}
+                  {extractSource === "cases" && selectedCaseIds.size > 0 && (
+                    <Button
+                      onClick={handleExtractSelectedCases}
+                      disabled={extracting}
+                      variant="outline"
+                      className="border-[rgba(99,102,241,0.5)] hover:bg-[rgba(99,102,241,0.1)]"
+                    >
+                      <ListChecks className="mr-1 h-4 w-4" />
+                      抽取选中({selectedCaseIds.size})
+                    </Button>
+                  )}
+                  {extractSource === "documents" && selectedDocIds.size > 0 && (
+                    <Button
+                      onClick={handleReprocessDocs}
+                      disabled={extracting}
+                      variant="outline"
+                      className="border-[rgba(245,158,11,0.5)] hover:bg-[rgba(245,158,11,0.1)] text-[#f59e0b]"
+                    >
+                      <RefreshCw className="mr-1 h-4 w-4" />
+                      重新处理({selectedDocIds.size})
+                    </Button>
+                  )}
+                </div>
+
                 {extracting && (
                   <div className="space-y-1">
                     <Progress value={extractProgress} className="h-2" />
                     <p className="text-xs text-muted-foreground text-center">
-                      {extractProgress >= 100 ? "抽取完成" : `正在抽取... ${Math.round(extractProgress)}%`}
+                      {taskProgress?.status === "completed"
+                        ? taskProgress.source === "reprocess"
+                          ? `处理完成！成功${taskProgress.success_count}个，失败${taskProgress.fail_count}个`
+                          : `抽取完成！成功${taskProgress.success_count}个，失败${taskProgress.fail_count}个`
+                        : taskProgress
+                          ? taskProgress.current_doc
+                            ? `${taskProgress.current_doc} (${Math.round(extractProgress)}%)`
+                            : taskProgress.source === "reprocess"
+                              ? `正在处理... ${taskProgress.current}/${taskProgress.total} (${Math.round(extractProgress)}%)`
+                              : `正在抽取... ${taskProgress.current}/${taskProgress.total} (${Math.round(extractProgress)}%)`
+                          : `正在启动... ${Math.round(extractProgress)}%`
+                      }
                     </p>
                   </div>
                 )}
                 {extractError && (
                   <p className="text-xs text-[#ef4444]">{extractError}</p>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Path Search Card */}
+          <Card className="glass-card depth-shadow-lg" style={{
+            background: isLight ? '#ffffff' : 'rgba(15,15,30,0.9)',
+            border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(99,102,241,0.2)'}`
+          }}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <GitBranch size={14} style={{ color: isLight ? '#6366f1' : '#6366f1' }} />
+                路径搜索
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">起点</Label>
+                  <Select value={pathSourceId} onValueChange={setPathSourceId}>
+                    <SelectTrigger className="glass-input h-8 text-xs">
+                      <SelectValue placeholder="选择起点节点" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(graphData?.nodes || []).map(n => (
+                        <SelectItem key={n.id} value={n.id} className="text-xs">
+                          {n.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">终点</Label>
+                  <Select value={pathTargetId} onValueChange={setPathTargetId}>
+                    <SelectTrigger className="glass-input h-8 text-xs">
+                      <SelectValue placeholder="选择终点节点" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(graphData?.nodes || []).map(n => (
+                        <SelectItem key={n.id} value={n.id} className="text-xs">
+                          {n.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={searchPath}
+                  disabled={!pathSourceId || !pathTargetId}
+                  className="w-full bg-gradient-to-r from-[#6366f1] to-[#4f46e5]"
+                >
+                  <GitBranch className="mr-1 h-4 w-4" />
+                  搜索路径
+                </Button>
+              </div>
+
+              {pathResult && pathResult.length === 0 && (
+                <p className="text-xs text-[#ef4444] text-center py-2">未找到路径</p>
+              )}
+
+              {pathResult && pathResult.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium" style={{ color: isLight ? '#1e293b' : '#f0f0f0' }}>
+                    找到路径 ({pathResult.length - 1} 步)
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 text-xs rounded-lg p-2" style={{
+                    background: isLight ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.1)'
+                  }}>
+                    {pathResult.map((nodeId, idx) => {
+                      const node = graphData?.nodes.find(n => n.id === nodeId);
+                      return (
+                        <>
+                          {idx > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                          <span
+                            className="cursor-pointer hover:underline"
+                            style={{ color: (NODE_COLORS as any)[node?.type || ''] || '#6366f1' }}
+                            onClick={() => focusNode(nodeId)}
+                          >
+                            {node?.name || nodeId}
+                          </span>
+                        </>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setPathResult(null); setPathEdges(null); setPathSourceId(""); setPathTargetId(""); }}
+                    className="w-full border-[rgba(239,68,68,0.5)] text-[#ef4444]"
+                  >
+                    清除结果
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Source Filter */}
+          {sources.length > 0 && (
+            <Card className="glass-card depth-shadow-lg" style={{
+              background: isLight ? '#ffffff' : 'rgba(15,15,30,0.9)',
+              border: `1px solid ${isLight ? '#e2e8f0' : 'rgba(99,102,241,0.2)'}`
+            }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Network size={14} style={{ color: isLight ? colors.CYBER_BLUE : '#6366f1' }} />
+                  按来源筛选
+                  {activeSource && (
+                    <button
+                      onClick={() => handleSourceFilter(null)}
+                      className="ml-auto text-xs px-2 py-0.5 rounded-md hover:opacity-80 transition-colors"
+                      style={{ background: isLight ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.2)', color: '#ef4444' }}
+                    >
+                      清除筛选
+                    </button>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {activeSource && (
+                  <div className="text-xs p-2 rounded-lg mb-2" style={{
+                    background: isLight ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.1)',
+                    border: `1px solid ${isLight ? '#bfdbfe' : 'rgba(59,130,246,0.3)'}`
+                  }}>
+                    <span style={{ color: isLight ? '#1e293b' : '#f0f0f0' }}>当前: </span>
+                    <span className="font-medium" style={{ color: isLight ? colors.CYBER_BLUE : '#6366f1' }}>{activeSource.name}</span>
+                    <span className="ml-1 text-muted-foreground">({activeSource.node_count}节点 {activeSource.edge_count}边)</span>
+                  </div>
+                )}
+                <div className="max-h-48 overflow-y-auto space-y-1">
+                  {sources.map((source) => (
+                    <button
+                      key={`${source.type}-${source.id}`}
+                      onClick={() => handleSourceFilter(activeSource?.id === source.id ? null : source)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:opacity-80 transition-colors"
+                      style={{
+                        background: activeSource?.id === source.id
+                          ? (isLight ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.2)')
+                          : 'transparent',
+                        border: activeSource?.id === source.id ? `1px solid ${isLight ? '#818cf8' : 'rgba(99,102,241,0.5)'}` : '1px solid transparent'
+                      }}
+                    >
+                      <span className="h-3 w-3 rounded-sm flex items-center justify-center shrink-0" style={{
+                        backgroundColor: source.type === 'case' ? '#f59e0b' : '#3b82f6',
+                      }}>
+                        {source.type === 'case' ? <AlertTriangle className="h-2 w-2 text-white" /> : <FileText className="h-2 w-2 text-white" />}
+                      </span>
+                      <span className="flex-1 min-w-0" style={{ color: isLight ? '#1e293b' : '#e8e8e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{source.name}</span>
+                      <span className="text-muted-foreground shrink-0">{source.node_count}N/{source.edge_count}E</span>
+                    </button>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}

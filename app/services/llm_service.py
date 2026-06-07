@@ -23,6 +23,7 @@
 
 import json
 import logging
+import os
 from typing import Any, Dict, Generator, List, Optional
 
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -40,6 +41,7 @@ BAICHUAN_BASE_URL = "https://api.baichuan-ai.com/v1"
 MOONSHOT_BASE_URL = "https://api.moonshot.cn/v1"
 SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
 OLLAMA_DEFAULT_URL = "http://localhost:11434"
+LLAMA_CPP_DEFAULT_URL = "http://localhost:11434/v1"
 
 LLM_PROVIDER_INFO = {
     "dashscope": {
@@ -121,6 +123,12 @@ LLM_PROVIDER_INFO = {
         "website": "https://ollama.com",
         "models": [],
     },
+    "llama_cpp": {
+        "name": "llama.cpp（本地模型）",
+        "url": LLAMA_CPP_DEFAULT_URL,
+        "website": "https://github.com/ggerganov/llama.cpp",
+        "models": [],
+    },
     "openai_compatible": {
         "name": "OpenAI 兼容 API",
         "url": "",
@@ -172,46 +180,68 @@ class LLMService:
         if base_url:
             self.base_url = base_url
         elif self.backend == "dashscope":
-            self.base_url = DASHSCOPE_BASE_URL
-            self.api_key = api_key or settings.DASHSCOPE_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or DASHSCOPE_BASE_URL
         elif self.backend == "ollama":
-            self.base_url = settings.LLM_API_BASE_URL or f"{OLLAMA_DEFAULT_URL}/v1"
-            self.api_key = api_key or settings.LLM_API_KEY or "ollama"
+            raw_url = settings.LLM_API_BASE_URL or OLLAMA_DEFAULT_URL
+            if not raw_url.rstrip("/").endswith("/v1"):
+                raw_url = raw_url.rstrip("/") + "/v1"
+            self.base_url = raw_url
+        elif self.backend == "llama_cpp":
+            raw_url = settings.LLM_API_BASE_URL or LLAMA_CPP_DEFAULT_URL
+            if not raw_url.rstrip("/").endswith("/v1"):
+                raw_url = raw_url.rstrip("/") + "/v1"
+            self.base_url = raw_url
         elif self.backend == "minimax":
-            self.base_url = MINIMAX_BASE_URL
-            self.api_key = api_key or settings.LLM_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or MINIMAX_BASE_URL
         elif self.backend == "deepseek":
-            self.base_url = DEEPSEEK_BASE_URL
-            self.api_key = api_key or settings.LLM_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or DEEPSEEK_BASE_URL
         elif self.backend == "zhipu":
-            self.base_url = ZHIPU_BASE_URL
-            self.api_key = api_key or settings.LLM_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or ZHIPU_BASE_URL
         elif self.backend == "baichuan":
-            self.base_url = BAICHUAN_BASE_URL
-            self.api_key = api_key or settings.LLM_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or BAICHUAN_BASE_URL
         elif self.backend == "moonshot":
-            self.base_url = MOONSHOT_BASE_URL
-            self.api_key = api_key or settings.LLM_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or MOONSHOT_BASE_URL
         elif self.backend == "siliconflow":
-            self.base_url = SILICONFLOW_BASE_URL
-            self.api_key = api_key or settings.LLM_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or SILICONFLOW_BASE_URL
         elif self.backend == "openai_compatible":
             self.base_url = settings.LLM_API_BASE_URL
-            self.api_key = api_key or settings.LLM_API_KEY
         else:
-            self.base_url = DASHSCOPE_BASE_URL
-            self.api_key = api_key or settings.DASHSCOPE_API_KEY
+            self.base_url = settings.LLM_API_BASE_URL or DASHSCOPE_BASE_URL
 
-        if not hasattr(self, "api_key"):
-            self.api_key = api_key or settings.DASHSCOPE_API_KEY
+        # 按 backend 类型选择正确的厂商 API Key
+        _vendor_key_map = {
+            "dashscope": settings.DASHSCOPE_API_KEY,
+            "minimax": settings.MINIMAX_API_KEY,
+            "deepseek": settings.DEEPSEEK_API_KEY,
+            "zhipu": settings.ZHIPU_API_KEY,
+            "baichuan": settings.BAICHUAN_API_KEY,
+            "moonshot": settings.MOONSHOT_API_KEY,
+            "siliconflow": settings.SILICONFLOW_API_KEY,
+            "ollama": "ollama",
+            "llama_cpp": "no-key",
+            "openai_compatible": settings.OPENAI_COMPATIBLE_API_KEY,
+        }
+        _fallback_key = _vendor_key_map.get(self.backend, settings.DASHSCOPE_API_KEY) or settings.LLM_API_KEY
+        self.api_key = api_key or _fallback_key
 
     def _get_client(self):
         if self._client is None:
+            import httpx
             from openai import OpenAI
-            self._client = OpenAI(
-                api_key=self.api_key or "unused",
-                base_url=self.base_url,
-            )
+
+            client_kwargs = {
+                "api_key": self.api_key or "unused",
+                "base_url": self.base_url,
+            }
+
+            http_proxy = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy") or ""
+            https_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or ""
+            proxy = https_proxy or http_proxy
+            if proxy:
+                logger.info(f"使用代理: {proxy}")
+                client_kwargs["http_client"] = httpx.Client(proxy=proxy, timeout=300.0)
+
+            self._client = OpenAI(**client_kwargs)
         return self._client
 
     def _reset_client(self):
@@ -226,14 +256,21 @@ class LLMService:
     ) -> str:
         """带超时和重试的聊天调用"""
         client = self._get_client()
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=60,
-        )
-        return response.choices[0].message.content
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=300,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            err_str = str(e)
+            if "connect" in err_str.lower() or "timeout" in err_str.lower() or "resolve" in err_str.lower() or "eof" in err_str.lower():
+                logger.error(f"LLM API 网络连接失败: {err_str[:200]}")
+                logger.error("检查网络连接，如需代理请设置 HTTP_PROXY 环境变量")
+            raise
 
     def chat(
         self,
@@ -249,9 +286,18 @@ class LLMService:
             logger.debug(f"LLM回复生成成功")
             return answer
 
+        except RuntimeError:
+            raise
         except Exception as e:
-            logger.error(f"LLM API调用失败: {e}", exc_info=True)
-            raise RuntimeError(f"大模型API调用失败: {str(e)}")
+            err_str = str(e)
+            logger.error(f"LLM API调用失败: {err_str[:300]}", exc_info=False)
+            if "connect" in err_str.lower() or "timeout" in err_str.lower() or "resolve" in err_str.lower() or "eof" in err_str.lower():
+                msg = ("大模型API网络连接失败。请检查网络配置：\n"
+                       "1. 确认虚拟机可访问外网\n"
+                       "2. 如需代理，执行: export HTTP_PROXY=http://代理地址:端口\n"
+                       "3. 确认 DASHSCOPE_API_KEY 已正确配置")
+                raise RuntimeError(msg)
+            raise RuntimeError(f"大模型API调用失败: {err_str[:200]}")
 
     def stream_chat(
         self,
@@ -302,9 +348,10 @@ class LLMService:
         temperature: float = 0.3,
     ) -> Dict[str, Any]:
         json_instruction = "\n\n请严格按照JSON格式输出，不要添加任何其他文字说明。"
-        messages[-1]["content"] += json_instruction
+        modified_messages = [m.copy() for m in messages]
+        modified_messages[-1]["content"] += json_instruction
 
-        response_text = self.chat(messages, temperature=temperature)
+        response_text = self.chat(modified_messages, temperature=temperature)
 
         try:
             result = extract_json_from_text(response_text)
@@ -315,7 +362,28 @@ class LLMService:
 
     def is_available(self) -> bool:
         if self.backend == "ollama":
-            return True
+            try:
+                import requests
+                ollama_url = settings.LLM_API_BASE_URL or OLLAMA_DEFAULT_URL
+                api_url = ollama_url.rstrip("/")
+                if api_url.endswith("/v1"):
+                    api_url = api_url[:-3]
+                resp = requests.get(f"{api_url}/api/tags", timeout=3)
+                if resp.status_code == 200:
+                    models = resp.json().get("models", [])
+                    if models:
+                        return True
+                return False
+            except Exception:
+                return False
+        elif self.backend == "llama_cpp":
+            try:
+                import requests
+                url = settings.LLM_API_BASE_URL or LLAMA_CPP_DEFAULT_URL
+                resp = requests.get(f"{url.rstrip('/')}/models", timeout=3)
+                return resp.status_code == 200
+            except Exception:
+                return False
         elif self.backend in ("openai_compatible", "deepseek", "zhipu", "baichuan", "moonshot", "siliconflow"):
             return bool(self.api_key and self.api_key != "your_api_key_here")
         else:
@@ -353,6 +421,38 @@ class LLMService:
             if api_url.endswith("/v1"):
                 api_url = api_url[:-3]
             resp = requests.get(f"{api_url}/api/tags", timeout=3)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    @staticmethod
+    def list_llama_cpp_models() -> List[Dict[str, str]]:
+        """获取 llama-server 上已加载的模型列表"""
+        try:
+            import requests
+            url = settings.LLM_API_BASE_URL or LLAMA_CPP_DEFAULT_URL
+            resp = requests.get(f"{url.rstrip('/')}/models", timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = []
+                for m in data.get("data", []):
+                    models.append({
+                        "name": m.get("id", ""),
+                        "size": "",
+                        "modified_at": "",
+                    })
+                return models
+        except Exception as e:
+            logger.debug(f"llama.cpp模型列表获取失败: {e}")
+        return []
+
+    @staticmethod
+    def check_llama_cpp_available() -> bool:
+        """检查 llama-server 是否在运行"""
+        try:
+            import requests
+            url = settings.LLM_API_BASE_URL or LLAMA_CPP_DEFAULT_URL
+            resp = requests.get(f"{url.rstrip('/')}/models", timeout=3)
             return resp.status_code == 200
         except Exception:
             return False

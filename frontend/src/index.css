@@ -421,6 +421,10 @@ h1, h2, h3, h4, h5, h6 {
   background-size: 300% 100%;
   animation: borderFlow 4s linear infinite;
   padding: 2px;
+  /* 不拦截子元素点击：让内部可点击 */
+  pointer-events: none;
+  /* 自身不可见 */
+  z-index: 0;
 }
 
 .cyber-border-animated > * {

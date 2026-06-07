@@ -326,6 +326,16 @@ async def image_search(request: ImageSearchRequest):
                 "results": formatted_results,
             }
         }
+    except RuntimeError as e:
+        # 视觉模型不可用（已降级返回结果，此处为完全失败）
+        logger.error(f"图片检索-视觉模型错误: {e}")
+        raise HTTPException(status_code=503, detail=f"视觉服务暂时不可用: {str(e)}")
+    except ConnectionError as e:
+        logger.error(f"图片检索-网络错误: {e}")
+        raise HTTPException(status_code=502, detail="视觉服务连接失败，请检查网络或API配置后重试")
+    except ValueError as e:
+        logger.error(f"图片检索-输入数据错误: {e}")
+        raise HTTPException(status_code=400, detail=f"图片格式无效: {str(e)}")
     except Exception as e:
         logger.error(f"图片检索失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="操作失败，请稍后重试")
+        raise HTTPException(status_code=500, detail="图片检索异常，请稍后重试")

@@ -119,7 +119,7 @@ def init_user_profile_table():
 
 # ============== API端点 ==============
 
-@router.get("/profile", response_model=UserProfileResponse)
+@router.get("/profile", summary="获取当前用户画像")
 async def get_profile(current_user: dict = Depends(get_current_user)):
     """
     获取当前用户画像
@@ -159,20 +159,21 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
             # 保存默认画像
             save_user_profile(profile.model_dump())
 
-        return UserProfileResponse(
-            success=True,
-            message="获取画像成功",
-            profile=profile,
-        )
+        return {
+            "code": 200,
+            "message": "获取画像成功",
+            "data": profile.model_dump(),
+        }
     except Exception as e:
         logger.error(f"获取用户画像失败: {e}")
-        return UserProfileResponse(
-            success=False,
-            message=f"获取失败: {str(e)}",
-        )
+        return {
+            "code": 500,
+            "message": f"获取失败: {str(e)}",
+            "data": None,
+        }
 
 
-@router.put("/profile", response_model=UserProfileResponse)
+@router.put("/profile", summary="更新用户画像")
 async def update_profile(
     update: UserProfileUpdate,
     current_user: dict = Depends(get_current_user),
@@ -242,22 +243,24 @@ async def update_profile(
 
         # 保存更新后的画像
         if save_user_profile(profile.model_dump()):
-            return UserProfileResponse(
-                success=True,
-                message="画像更新成功",
-                profile=profile,
-            )
+            return {
+                "code": 200,
+                "message": "画像更新成功",
+                "data": profile.model_dump(),
+            }
         else:
-            return UserProfileResponse(
-                success=False,
-                message="保存失败",
-            )
+            return {
+                "code": 500,
+                "message": "保存失败",
+                "data": None,
+            }
     except Exception as e:
         logger.error(f"更新用户画像失败: {e}")
-        return UserProfileResponse(
-            success=False,
-            message=f"更新失败: {str(e)}",
-        )
+        return {
+            "code": 500,
+            "message": f"更新失败: {str(e)}",
+            "data": None,
+        }
 
 
 @router.get("/profile/ai-hints", response_model=dict)
@@ -318,15 +321,19 @@ async def get_profile_ai_hints(current_user: dict = Depends(get_current_user)):
         hints["specialties"] = [s for s in specialties if s]
 
         return {
-            "success": True,
-            "role": role,
-            "hints": hints,
+            "code": 200,
+            "message": "查询成功",
+            "data": {
+                "role": role,
+                "hints": hints,
+            },
         }
     except Exception as e:
         logger.error(f"获取AI提示失败: {e}")
         return {
-            "success": False,
+            "code": 500,
             "message": str(e),
+            "data": None,
         }
 
 

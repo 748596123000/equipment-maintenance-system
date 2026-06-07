@@ -22,30 +22,115 @@ from pydantic import Field
 class Settings(BaseSettings):
     """系统配置类，从环境变量和.env文件加载配置"""
 
-    # ========== 通义千问API配置 ==========
+    # ========== 统一 API 密钥配置（多厂商兼容） ==========
     DASHSCOPE_API_KEY: str = Field(
         default="",
-        description="通义千问API密钥，从 https://dashscope.console.aliyun.com/ 获取"
+        description="通义千问API密钥（默认兼容旧配置），从 https://dashscope.console.aliyun.com/ 获取"
+    )
+    MINIMAX_API_KEY: str = Field(
+        default="",
+        description="MiniMax（MiniMax）API密钥，Token Plan: https://platform.minimaxi.com/user-center/payment/token-plan"
+    )
+    DEEPSEEK_API_KEY: str = Field(
+        default="",
+        description="DeepSeek（深度求索）API密钥: https://platform.deepseek.com"
+    )
+    ZHIPU_API_KEY: str = Field(
+        default="",
+        description="智谱AI API密钥: https://open.bigmodel.cn"
+    )
+    BAICHUAN_API_KEY: str = Field(
+        default="",
+        description="百川智能 API密钥: https://www.baichuan-ai.com"
+    )
+    MOONSHOT_API_KEY: str = Field(
+        default="",
+        description="月之暗面（Kimi）API密钥: https://platform.moonshot.cn"
+    )
+    SILICONFLOW_API_KEY: str = Field(
+        default="",
+        description="硅基流动 API密钥: https://www.siliconflow.cn"
+    )
+    OPENAI_COMPATIBLE_API_KEY: str = Field(
+        default="",
+        description="OpenAI 兼容 API 密钥（用于 vLLM / LMStudio / llama-server 等自建服务）"
+    )
+
+    # 顶层 LLM API Key（兼容旧配置）
+    LLM_API_KEY: str = Field(
+        default="",
+        description="顶层 LLM API Key（OpenAI兼容/Ollama，可留空）"
+    )
+
+    # ========== LLM 独立配置（per-service） ==========
+    LLM_VENDOR: str = Field(
+        default="",
+        description="LLM 独立厂商（为空时回退到 LLM_BACKEND）。可选: dashscope/deepseek/zhipu/baichuan/moonshot/siliconflow/minimax/ollama/llama_cpp/openai_compatible"
+    )
+    LLM_API_KEY_OVERRIDE: str = Field(
+        default="",
+        description="LLM 独立 API Key（为空时回退到 LLM_API_KEY 或对应厂商默认 Key）"
+    )
+    LLM_API_BASE_URL_OVERRIDE: str = Field(
+        default="",
+        description="LLM 独立 Base URL（为空时回退到 LLM_API_BASE_URL）"
+    )
+    LLM_MODEL_OVERRIDE: str = Field(
+        default="",
+        description="LLM 独立模型名（为空时回退到 LLM_MODEL）"
+    )
+
+    # ========== Embedding 独立配置（per-service） ==========
+    EMBEDDING_VENDOR: str = Field(
+        default="",
+        description="Embedding 独立厂商（为空时回退到 dashscope）。可选: dashscope/openai_compatible/llama_cpp/ollama"
+    )
+    EMBEDDING_API_KEY: str = Field(
+        default="",
+        description="Embedding 独立 API Key（为空时回退到 DASHSCOPE_API_KEY 或对应厂商 Key）"
+    )
+    EMBEDDING_API_BASE_URL: str = Field(
+        default="",
+        description="Embedding 独立 Base URL（OpenAI兼容 / Ollama / llama-server）"
+    )
+    EMBEDDING_MODEL_NAME: str = Field(
+        default="",
+        description="Embedding 独立模型名（为空时回退到 EMBEDDING_MODEL）"
     )
     EMBEDDING_MODEL: str = Field(
         default="text-embedding-v3",
-        description="文本向量化模型名称"
+        description="文本向量化模型名称（旧字段，作为回退默认）"
     )
+
+    # ========== Vision 独立配置（per-service） ==========
+    VISION_VENDOR: str = Field(
+        default="",
+        description="Vision 独立厂商（为空时回退到 dashscope）。可选: dashscope/openai_compatible/llama_cpp"
+    )
+    VISION_API_KEY: str = Field(
+        default="",
+        description="Vision 独立 API Key（为空时回退到 DASHSCOPE_API_KEY 或对应厂商 Key）"
+    )
+    VISION_API_BASE_URL: str = Field(
+        default="",
+        description="Vision 独立 Base URL（llama-server / OpenAI兼容 / 自定义）"
+    )
+    VISION_MODEL_NAME: str = Field(
+        default="",
+        description="Vision 独立模型名（默认根据 vendor 自动选）"
+    )
+
     LLM_BACKEND: str = Field(
         default="dashscope",
-        description="LLM后端类型: dashscope / openai_compatible / ollama / minimax"
+        description="LLM后端类型（兼容旧字段，推荐使用 LLM_VENDOR）"
     )
     LLM_MODEL: str = Field(
         default="qwen-max",
-        description="大语言模型名称，可选: qwen-max, qwen-plus, qwen-turbo, minimax模型"
+        description="大语言模型名称（兼容旧字段）"
     )
     LLM_API_BASE_URL: str = Field(
         default="",
         description="OpenAI兼容API基础URL，如 http://localhost:8000/v1"
-    )
-    LLM_API_KEY: str = Field(
-        default="",
-        description="OpenAI兼容API密钥，Ollama可留空"
     )
     LLM_TEMPERATURE: float = Field(
         default=0.7,
@@ -168,6 +253,12 @@ class Settings(BaseSettings):
         default="auto",
         description="视觉模型GPU设备: auto / cuda:0 / cpu"
     )
+
+    # ========== LoongArch本地模型配置 ==========
+    LLAMA_CPP_EMBED_MODEL_PATH: str = Field(
+        default="",
+        description="LoongArch本地Embedding模型路径（GGUF格式），用于替代Ollama"
+    )
     ENVIRONMENT: str = Field(
         default="development",
         description="运行环境: development / production"
@@ -238,12 +329,32 @@ class Settings(BaseSettings):
             db = get_database()
             config_map = {
                 "dashscope_api_key": ("DASHSCOPE_API_KEY", str),
+                "minimax_api_key": ("MINIMAX_API_KEY", str),
+                "deepseek_api_key": ("DEEPSEEK_API_KEY", str),
+                "zhipu_api_key": ("ZHIPU_API_KEY", str),
+                "baichuan_api_key": ("BAICHUAN_API_KEY", str),
+                "moonshot_api_key": ("MOONSHOT_API_KEY", str),
+                "siliconflow_api_key": ("SILICONFLOW_API_KEY", str),
+                "openai_compatible_api_key": ("OPENAI_COMPATIBLE_API_KEY", str),
                 "llm_model": ("LLM_MODEL", str),
                 "llm_temperature": ("LLM_TEMPERATURE", float),
                 "llm_max_tokens": ("LLM_MAX_TOKENS", int),
                 "llm_backend": ("LLM_BACKEND", str),
                 "llm_api_base_url": ("LLM_API_BASE_URL", str),
                 "llm_api_key": ("LLM_API_KEY", str),
+                # 新增 per-service 独立配置
+                "llm_vendor": ("LLM_VENDOR", str),
+                "llm_api_key_override": ("LLM_API_KEY_OVERRIDE", str),
+                "llm_api_base_url_override": ("LLM_API_BASE_URL_OVERRIDE", str),
+                "llm_model_override": ("LLM_MODEL_OVERRIDE", str),
+                "embedding_vendor": ("EMBEDDING_VENDOR", str),
+                "embedding_api_key": ("EMBEDDING_API_KEY", str),
+                "embedding_api_base_url": ("EMBEDDING_API_BASE_URL", str),
+                "embedding_model_name": ("EMBEDDING_MODEL_NAME", str),
+                "vision_vendor": ("VISION_VENDOR", str),
+                "vision_api_key": ("VISION_API_KEY", str),
+                "vision_api_base_url": ("VISION_API_BASE_URL", str),
+                "vision_model_name": ("VISION_MODEL_NAME", str),
                 "embedding_model": ("EMBEDDING_MODEL", str),
                 "chunk_size": ("CHUNK_SIZE", int),
                 "chunk_overlap": ("CHUNK_OVERLAP", int),
@@ -266,6 +377,7 @@ class Settings(BaseSettings):
 
 # 全局配置单例
 settings = Settings()
+settings.load_from_database()
 
 
 def get_settings() -> Settings:

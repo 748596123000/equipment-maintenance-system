@@ -36,3 +36,49 @@ dogfood-output/
 .backend_pid
 *.zip
 args.json
+.pip_packages/
+.node/
+
+# 测试文件
+test_*.py
+test_*.sh
+check_*.py
+check_*.sh
+fix_*.sh
+fix_*.py
+*_test.py
+*_check.py
+
+# 临时文件
+1111/
+loongarch_extra_packages/
+loongarch_update/
+pip_packages/
+update-v*/
+*.7z
+
+# 部署脚本（保留核心脚本）
+create_package.bat
+create_package.py
+create_deploy_package.py
+create_deploy_zip.py
+create_extra_deps_package.py
+deploy_commands.txt
+install_deps.bat
+install_deps.py
+install_deps.sh
+install_all_deps.sh
+setup.sh
+start.bat
+start_project.sh
+smart_start.sh
+
+# 下载脚本
+download_*.py
+download_*.sh
+
+# 其他临时脚本
+cleanup_tasks.py
+_check_*.py
+_list_models.py
+_update_model.py

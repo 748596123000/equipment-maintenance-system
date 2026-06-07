@@ -5,7 +5,8 @@ import { AdminGuard } from './components/guards/admin-guard'
 import { initTheme } from './hooks/useTheme'
 import { useGlobalShortcuts } from './hooks/useKeyboardShortcuts'
 
-const LoginPage = lazy(() => import('./pages/login'))
+import LoginPage from './pages/login'
+
 const RegisterPage = lazy(() => import('./pages/register'))
 const DashboardPage = lazy(() => import('./pages/dashboard'))
 const SearchPage = lazy(() => import('./pages/search'))

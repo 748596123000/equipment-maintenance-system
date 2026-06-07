@@ -105,9 +105,14 @@ export default function CasesPage() {
     if (!searchKeyword.trim()) { fetchCases(); return }
     setLoading(true)
     try {
-      const res = await api.post<{ cases: CaseItem[]; pagination: Pagination }>('/case/search', { query: searchKeyword.trim(), page: 1, page_size: pagination.page_size })
+      const res = await api.post<{ cases: CaseItem[]; pagination?: Pagination; total?: number }>('/case/search', { query: searchKeyword.trim(), page: 1, page_size: pagination.page_size })
       setCases(res.data.cases || [])
-      setPagination(res.data.pagination || pagination)
+      // 后端搜索可能返回 pagination 对象或直接返回 total
+      if (res.data.pagination) {
+        setPagination(res.data.pagination)
+      } else if (res.data.total !== undefined) {
+        setPagination(p => ({ ...p, total: res.data.total!, total_pages: Math.ceil(res.data.total! / p.page_size) }))
+      }
     } catch { setCases([]) } finally { setLoading(false) }
   }, [searchKeyword, pagination.page_size, fetchCases])
 
@@ -115,7 +120,16 @@ export default function CasesPage() {
     setDetailLoading(true); setDetailOpen(true)
     try {
       const res = await api.get<CaseDetail>(`/case/${caseId}`)
-      setDetailData(res.data)
+      // 后端返回 description/solution，前端映射为 fault_description/repair_result
+      const raw = res.data as Record<string, unknown>
+      const mapped: CaseDetail = {
+        ...res.data,
+        fault_description: (raw.fault_description as string) || (raw.description as string) || '',
+        repair_result: (raw.repair_result as string) || (raw.solution as string) || '',
+        equipment_type: (raw.equipment_type as string) || '',
+        equipment_model: (raw.equipment_model as string) || (raw.device_model as string) || '',
+      }
+      setDetailData(mapped)
     } catch { setDetailData(null) } finally { setDetailLoading(false) }
   }, [])
 
@@ -132,12 +146,16 @@ export default function CasesPage() {
   const handleCreate = useCallback(async () => {
     if (!form.title.trim() || !form.equipment_type.trim() || !form.fault_description.trim()) return
     setSubmitting(true)
+    setErrorMsg('')
     try {
       const tags = form.tags.split(',').map(t => t.trim()).filter(Boolean)
       await api.post('/case/create', { title: form.title.trim(), equipment_type: form.equipment_type.trim(), equipment_model: form.equipment_model.trim(), fault_description: form.fault_description.trim(), fault_analysis: form.fault_analysis.trim(), repair_process: form.repair_process.trim(), repair_result: form.repair_result.trim(), lessons_learned: form.lessons_learned.trim(), tags })
       setForm({ title: '', equipment_type: '', equipment_model: '', fault_description: '', fault_analysis: '', repair_process: '', repair_result: '', lessons_learned: '', tags: '' })
       setActiveTab('list'); fetchCases()
-    } catch { setErrorMsg('创建案例失败，请检查填写内容') } finally { setSubmitting(false) }
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || '创建案例失败，请检查填写内容'
+      setErrorMsg(detail)
+    } finally { setSubmitting(false) }
   }, [form, fetchCases])
 
   const handleApprove = useCallback(async () => {
@@ -430,6 +448,11 @@ export default function CasesPage() {
                       }} />
                     </div>
                   </div>
+                  {errorMsg && (
+                    <div className="mt-4 p-3 rounded-lg text-sm" style={{ background: `${colors.CYBER_RED}15`, color: colors.CYBER_RED, border: `1px solid ${colors.CYBER_RED}30` }}>
+                      {errorMsg}
+                    </div>
+                  )}
                   <div className="mt-6 flex justify-end">
                     <Button onClick={handleCreate} disabled={submitting || !form.title.trim() || !form.equipment_type.trim() || !form.fault_description.trim()} className="h-11 rounded-xl font-medium" style={{ background: `linear-gradient(135deg, ${colors.CYBER_GREEN} 0%, ${colors.CYBER_CYAN} 100%)`, color: '#000', boxShadow: `0 4px 20px ${colors.CYBER_GREEN}30` }}>
                       <Plus className="mr-2 h-4 w-4" /> 提交案例

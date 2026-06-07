@@ -1,25 +1,28 @@
 """
-PDF文档解析模块
+PDF文档解析模块（无 PyMuPDF 依赖版）
 
-使用PyMuPDF和pdfplumber解析PDF文档，提取：
+使用 pdfplumber + pdfminer.six 解析 PDF 文档，提取：
 - 文本内容（含段落结构和标题层级）
 - 表格数据
-- 图片信息
+- 图片信息（嵌入图片 + 整页渲染图，兼容扫描件）
 - 文档元数据（标题、作者、页数等）
 
-支持多种PDF格式，包括扫描件（需配合OCR）。
+支持的 PDF 类型：
+- 文本型 PDF（直接提取文本）
+- 扫描件 PDF（无文本层，整页渲染为图片，AI 视觉分析）
+- 混合型 PDF（部分页有文本，部分页是图片）
+
+设计目标：在 LoongArch 等无 PyMuPDF 预编译 wheel 的平台上也能正常运行。
 """
 
+import io
 import logging
 import os
 import re
 import base64
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-import fitz  # PyMuPDF
 import pdfplumber
 
 from app.config import settings
@@ -79,64 +82,38 @@ class TextParagraph:
 
 class PDFParser:
     """
-    PDF文档解析器
+    PDF文档解析器（无 PyMuPDF 依赖）
 
-    使用PyMuPDF提取文本和图片，使用pdfplumber提取表格数据。
-    支持增量解析，可按页处理大文件。
+    使用 pdfplumber 提取文本和表格，使用 pdfplumber + pdfminer 提取嵌入图片，
+    整页渲染通过 pdfplumber 的 page.to_image() 完成（兼容扫描件）。
 
     Attributes:
         file_path: PDF文件路径
         max_pages: 最大解析页数限制
     """
 
-    # 标题层级判断的正则模式（按优先级排列）
     HEADING_PATTERNS = [
-        # "第一章 xxx" / "第一节 xxx" / "第一篇 xxx"
         (r"^第[一二三四五六七八九十百]+[章节篇部]\s*.+", 1),
-        # "一、xxx" / "二、xxx"
         (r"^[一二三四五六七八九十]+[、.．]\s*.+", 2),
-        # "1.1 xxx" / "1.1.1 xxx" (多级编号)
         (r"^\d{1,2}\.\d{1,2}(\.\d{1,2})+\s*.+", 3),
-        # "1. xxx" / "1、xxx"
         (r"^\d{1,2}[.、．]\s*.+", 2),
-        # "A. xxx" / "B. xxx"
         (r"^[A-Z][.、．]\s*.+", 3),
-        # "(一) xxx" / "(二) xxx"
         (r"^（[一二三四五六七八九十]+）\s*.+", 3),
-        # 常见章节关键词
         (r"^(?:摘要|引言|背景|目的|方法|结果|讨论|结论|参考文献|附录|目录|前言|概述|说明)\s*", 1),
     ]
 
-    # 字体大小与标题层级的映射阈值
     FONT_SIZE_THRESHOLDS = {
-        1: 18.0,   # 一级标题：大于等于18磅
-        2: 14.0,   # 二级标题：大于等于14磅
-        3: 12.0,   # 三级标题：大于等于12磅
+        1: 18.0,
+        2: 14.0,
+        3: 12.0,
     }
 
     def __init__(self, file_path: str, max_pages: Optional[int] = None):
-        """
-        初始化PDF解析器
-
-        Args:
-            file_path: PDF文件路径
-            max_pages: 最大解析页数，None表示不限制
-        """
         self.file_path = file_path
         self.max_pages = max_pages
-        self._doc: Optional[fitz.Document] = None
+        self._doc: Optional[pdfplumber.PDF] = None
 
-    def _open_document(self) -> fitz.Document:
-        """
-        打开PDF文档
-
-        Returns:
-            fitz.Document: 打开的PDF文档对象
-
-        Raises:
-            FileNotFoundError: 文件不存在
-            RuntimeError: 文件加密或损坏
-        """
+    def _open_document(self) -> pdfplumber.PDF:
         if self._doc is not None:
             return self._doc
 
@@ -144,26 +121,13 @@ class PDFParser:
             raise FileNotFoundError(f"PDF文件不存在: {self.file_path}")
 
         try:
-            self._doc = fitz.open(self.file_path)
-        except fitz.FileDataError as e:
-            raise RuntimeError(f"PDF文件损坏或格式不支持: {e}")
+            self._doc = pdfplumber.open(self.file_path)
         except Exception as e:
             raise RuntimeError(f"打开PDF文件失败: {e}")
-
-        # 检查是否加密
-        if self._doc.is_encrypted:
-            try:
-                # 尝试用空密码解密
-                self._doc.authenticate("")
-            except Exception:
-                self._doc.close()
-                self._doc = None
-                raise RuntimeError("PDF文件已加密，无法解析")
 
         return self._doc
 
     def _close_document(self) -> None:
-        """关闭PDF文档，释放资源"""
         if self._doc is not None:
             try:
                 self._doc.close()
@@ -172,26 +136,20 @@ class PDFParser:
             self._doc = None
 
     def get_metadata(self) -> dict:
-        """
-        获取PDF文档元数据
-
-        Returns:
-            dict: 包含title, author, subject, keywords, creator,
-                  producer, creation_date, modification_date, total_pages等
-        """
         doc = self._open_document()
+        meta = doc.metadata or {}
         metadata = {
-            "title": (doc.metadata.get("title") or "").strip(),
-            "author": (doc.metadata.get("author") or "").strip(),
-            "subject": (doc.metadata.get("subject") or "").strip(),
-            "keywords": (doc.metadata.get("keywords") or "").strip(),
-            "creator": (doc.metadata.get("creator") or "").strip(),
-            "producer": (doc.metadata.get("producer") or "").strip(),
-            "creation_date": doc.metadata.get("creationDate", ""),
-            "modification_date": doc.metadata.get("modDate", ""),
-            "total_pages": len(doc),
-            "format": doc.metadata.get("format", ""),
-            "encrypted": doc.is_encrypted,
+            "title": (meta.get("Title") or "").strip(),
+            "author": (meta.get("Author") or "").strip(),
+            "subject": (meta.get("Subject") or "").strip(),
+            "keywords": (meta.get("Keywords") or "").strip(),
+            "creator": (meta.get("Creator") or "").strip(),
+            "producer": (meta.get("Producer") or "").strip(),
+            "creation_date": str(meta.get("CreationDate") or ""),
+            "modification_date": str(meta.get("ModDate") or ""),
+            "total_pages": len(doc.pages),
+            "format": "PDF",
+            "encrypted": False,
         }
         logger.info(f"提取元数据完成: {self.file_path}, 共 {metadata['total_pages']} 页")
         return metadata
@@ -199,16 +157,9 @@ class PDFParser:
     def extract_text(self) -> List[TextParagraph]:
         """
         提取全部文本，返回结构化数据
-
-        使用PyMuPDF的TextDict模式提取文本，通过字体大小和样式
-        判断标题层级，保留章节结构。
-
-        Returns:
-            List[TextParagraph]: 结构化文本段落列表，每个包含
-                page(页码), title(所属章节标题), content(内容), level(标题级别)
         """
         doc = self._open_document()
-        total_pages = len(doc)
+        total_pages = len(doc.pages)
         if self.max_pages is not None:
             total_pages = min(total_pages, self.max_pages)
 
@@ -218,129 +169,72 @@ class PDFParser:
 
         for page_num in range(1, total_pages + 1):
             try:
-                page = doc[page_num - 1]
+                page = doc.pages[page_num - 1]
+                page_text = page.extract_text() or ""
+                if not page_text.strip():
+                    continue
 
-                # 使用 textdict 模式提取，保留字体信息
-                blocks = page.get_text("dict")["blocks"]
-
-                page_text_parts = []
+                lines = page_text.split("\n")
+                page_text_parts: List[str] = []
                 page_title = current_title
-                page_level = current_level
 
-                for block in blocks:
-                    if block["type"] != 0:  # 只处理文本块，跳过图片块
+                for raw_line in lines:
+                    line_text = raw_line.strip()
+                    if not line_text:
                         continue
 
-                    for line in block.get("lines", []):
-                        line_text = ""
-                        line_font_size = 0.0
-                        is_bold = False
+                    heading_level = self._detect_heading_level(line_text, 0.0, False)
 
-                        for span in line.get("spans", []):
-                            line_text += span.get("text", "")
-                            span_size = span.get("size", 0)
-                            if span_size > line_font_size:
-                                line_font_size = span_size
-                            # 检查是否加粗
-                            font_name = span.get("font", "").lower()
-                            if "bold" in font_name or "black" in font_name or "heavy" in font_name:
-                                is_bold = True
+                    if heading_level > 0:
+                        if page_text_parts:
+                            combined = "\n".join(page_text_parts).strip()
+                            if combined:
+                                paragraphs.append(TextParagraph(
+                                    page=page_num,
+                                    title=page_title,
+                                    content=combined,
+                                    level=0,
+                                ))
+                            page_text_parts = []
 
-                        line_text = line_text.strip()
-                        if not line_text:
-                            continue
+                        current_title = line_text
+                        current_level = heading_level
+                        page_title = current_title
 
-                        # 判断是否为标题
-                        heading_level = self._detect_heading_level(line_text, line_font_size, is_bold)
+                        paragraphs.append(TextParagraph(
+                            page=page_num,
+                            title=line_text,
+                            content=line_text,
+                            level=heading_level,
+                        ))
+                    else:
+                        page_text_parts.append(line_text)
 
-                        if heading_level > 0:
-                            # 这是一个标题行
-                            # 先保存之前累积的正文内容
-                            if page_text_parts:
-                                combined_content = "\n".join(page_text_parts).strip()
-                                if combined_content:
-                                    paragraphs.append(TextParagraph(
-                                        page=page_num,
-                                        title=page_title,
-                                        content=combined_content,
-                                        level=0,
-                                    ))
-                                page_text_parts = []
-
-                            # 更新当前标题
-                            current_title = line_text
-                            current_level = heading_level
-                            page_title = current_title
-                            page_level = current_level
-
-                            # 将标题本身也作为一个段落保存
-                            paragraphs.append(TextParagraph(
-                                page=page_num,
-                                title=line_text,
-                                content=line_text,
-                                level=heading_level,
-                            ))
-                        else:
-                            # 正文内容
-                            page_text_parts.append(line_text)
-
-                    # 块之间添加段落分隔
-                    page_text_parts.append("")
-
-                # 保存页面剩余的正文内容
                 if page_text_parts:
-                    combined_content = "\n".join(page_text_parts).strip()
-                    if combined_content:
+                    combined = "\n".join(page_text_parts).strip()
+                    if combined:
                         paragraphs.append(TextParagraph(
                             page=page_num,
                             title=page_title,
-                            content=combined_content,
+                            content=combined,
                             level=0,
                         ))
 
             except Exception as e:
                 logger.error(f"提取第 {page_num} 页文本失败: {e}", exc_info=True)
-                # 降级为简单文本提取
-                try:
-                    page = doc[page_num - 1]
-                    simple_text = page.get_text("text").strip()
-                    if simple_text:
-                        paragraphs.append(TextParagraph(
-                            page=page_num,
-                            title=current_title,
-                            content=simple_text,
-                            level=0,
-                        ))
-                except Exception as inner_e:
-                    logger.error(f"降级提取第 {page_num} 页文本也失败: {inner_e}")
 
         logger.info(f"文本提取完成: 共 {len(paragraphs)} 个段落")
         return paragraphs
 
     def _detect_heading_level(self, text: str, font_size: float, is_bold: bool) -> int:
-        """
-        检测文本行的标题层级
-
-        综合使用正则模式匹配和字体大小判断来确定标题层级。
-
-        Args:
-            text: 文本行内容
-            font_size: 字体大小（磅）
-            is_bold: 是否加粗
-
-        Returns:
-            int: 标题层级（0=非标题, 1=一级标题, 2=二级标题, 3=三级标题）
-        """
         text_stripped = text.strip()
         if not text_stripped:
             return 0
 
-        # 方法1：正则模式匹配
         for pattern, level in self.HEADING_PATTERNS:
             if re.match(pattern, text_stripped):
                 return level
 
-        # 方法2：基于字体大小判断
         if font_size >= self.FONT_SIZE_THRESHOLDS[1]:
             return 1
         elif font_size >= self.FONT_SIZE_THRESHOLDS[2]:
@@ -348,102 +242,60 @@ class PDFParser:
         elif font_size >= self.FONT_SIZE_THRESHOLDS[3] and is_bold:
             return 3
 
-        # 方法3：短行且加粗也可能是标题
         if is_bold and len(text_stripped) <= 30 and not text_stripped.endswith(("。", "，", "；")):
             return 3
 
         return 0
 
     def extract_tables(self) -> List[TableData]:
-        """
-        提取PDF中所有表格数据
-
-        使用pdfplumber进行表格识别和提取。
-
-        Returns:
-            List[TableData]: 表格数据列表，每个包含页码、行数据和可选标题
-        """
         doc = self._open_document()
-        total_pages = len(doc)
+        total_pages = len(doc.pages)
         if self.max_pages is not None:
             total_pages = min(total_pages, self.max_pages)
 
         all_tables: List[TableData] = []
 
-        try:
-            with pdfplumber.open(self.file_path) as pdf:
-                for page_num in range(1, total_pages + 1):
-                    try:
-                        pdf_page = pdf.pages[page_num - 1]
-                        tables = pdf_page.extract_tables()
+        for page_num in range(1, total_pages + 1):
+            try:
+                page = doc.pages[page_num - 1]
+                tables = page.extract_tables() or []
+                if not tables:
+                    continue
 
-                        if not tables:
-                            continue
+                for table_idx, table in enumerate(tables):
+                    cleaned_rows = []
+                    for row in table:
+                        cleaned_row = [cell.strip() if cell else "" for cell in row]
+                        if any(cell for cell in cleaned_row):
+                            cleaned_rows.append(cleaned_row)
 
-                        for table_idx, table in enumerate(tables):
-                            # 清理表格数据：去除None值，去除首尾空白
-                            cleaned_rows = []
-                            for row in table:
-                                cleaned_row = []
-                                for cell in row:
-                                    if cell is None:
-                                        cleaned_row.append("")
-                                    else:
-                                        cleaned_row.append(cell.strip())
-                                # 跳过全空行
-                                if any(cell for cell in cleaned_row):
-                                    cleaned_rows.append(cleaned_row)
-
-                            if cleaned_rows:
-                                # 尝试从表格前的文本中提取表格标题
-                                caption = self._extract_table_caption(pdf_page, table_idx)
-
-                                table_data = TableData(
-                                    page_number=page_num,
-                                    rows=cleaned_rows,
-                                    caption=caption,
-                                )
-                                all_tables.append(table_data)
-
-                    except Exception as e:
-                        logger.error(f"提取第 {page_num} 页表格失败: {e}", exc_info=True)
-                        continue
-
-        except Exception as e:
-            logger.error(f"使用pdfplumber打开PDF失败: {e}", exc_info=True)
-            logger.warning("表格提取失败，继续使用PyMuPDF提取文本")
+                    if cleaned_rows:
+                        caption = self._extract_table_caption(page, table_idx)
+                        all_tables.append(TableData(
+                            page_number=page_num,
+                            rows=cleaned_rows,
+                            caption=caption,
+                        ))
+            except Exception as e:
+                logger.error(f"提取第 {page_num} 页表格失败: {e}", exc_info=True)
+                continue
 
         logger.info(f"表格提取完成: 共提取 {len(all_tables)} 个表格")
         return all_tables
 
-    def _extract_table_caption(self, pdf_page, table_index: int) -> Optional[str]:
-        """
-        尝试从页面文本中提取表格标题
-
-        通常表格标题在表格上方，包含"表"字或"Table"字样。
-
-        Args:
-            pdf_page: pdfplumber页面对象
-            table_index: 表格在页面中的索引
-
-        Returns:
-            Optional[str]: 表格标题，未找到则返回None
-        """
+    def _extract_table_caption(self, page, table_index: int) -> Optional[str]:
         try:
-            text = pdf_page.extract_text() or ""
+            text = page.extract_text() or ""
             lines = [line.strip() for line in text.split("\n") if line.strip()]
 
-            # 查找包含"表"或"Table"的行
             for line in lines:
                 if re.search(r"(?:表\s*\d+|Table\s*\d+)", line, re.IGNORECASE):
                     return line
 
-            # 如果没有明确的表格编号，取表格上方最近的短行作为标题
             if lines:
                 for line in reversed(lines):
                     if len(line) <= 50 and not line.endswith(("。", "；")):
                         return line
-
         except Exception as e:
             logger.debug(f"提取表格标题失败: {e}")
 
@@ -451,108 +303,119 @@ class PDFParser:
 
     def extract_images(self, output_dir: Optional[str] = None) -> List[ImageInfo]:
         """
-        提取PDF中的图片，保存到指定目录
+        提取PDF中的图片
 
-        使用PyMuPDF提取嵌入图片，并保存为文件。
+        策略：
+        1. 先尝试提取嵌入图片（PDF 对象中的 image XObject）
+        2. 如果某页没有任何图片（常见于扫描件），把整页渲染为图片
 
         Args:
-            output_dir: 图片保存目录，默认使用配置中的IMAGE_DIR
-
-        Returns:
-            List[ImageInfo]: 图片信息列表
+            output_dir: 图片保存目录
         """
-        doc = self._open_document()
-        total_pages = len(doc)
-        if self.max_pages is not None:
-            total_pages = min(total_pages, self.max_pages)
-
         if output_dir is None:
             output_dir = settings.IMAGE_DIR
 
-        # 确保输出目录存在
         os.makedirs(output_dir, exist_ok=True)
 
         all_images: List[ImageInfo] = []
         filename_base = os.path.splitext(os.path.basename(self.file_path))[0]
 
+        doc = self._open_document()
+        total_pages = len(doc.pages)
+        if self.max_pages is not None:
+            total_pages = min(total_pages, self.max_pages)
+
         for page_num in range(1, total_pages + 1):
             try:
-                page = doc[page_num - 1]
-                image_list = page.get_images(full=True)
+                page = doc.pages[page_num - 1]
+                images = page.images or []
 
-                for img_index, img_info in enumerate(image_list):
+                if images:
+                    for img_index, img in enumerate(images):
+                        try:
+                            stream = img.get("stream")
+                            image_bytes = None
+                            if stream is not None:
+                                # pdfminer.six PDFStream 对象
+                                if hasattr(stream, "get_data"):
+                                    try:
+                                        image_bytes = stream.get_data()
+                                    except Exception:
+                                        image_bytes = None
+                                if image_bytes is None and hasattr(stream, "data"):
+                                    try:
+                                        image_bytes = stream.data
+                                    except Exception:
+                                        image_bytes = None
+
+                            if not image_bytes or len(image_bytes) < 100:
+                                continue
+
+                            # 判断图片格式
+                            image_format = "png"
+                            stream_name = getattr(stream, "name", "") or ""
+                            if stream_name and "." in stream_name:
+                                ext = stream_name.rsplit(".", 1)[-1].lower()
+                                if ext in ("jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp"):
+                                    image_format = ext
+
+                            image_filename = f"{filename_base}_p{page_num}_img{img_index}.{image_format}"
+                            image_path = os.path.join(output_dir, image_filename)
+                            with open(image_path, "wb") as f:
+                                f.write(image_bytes)
+
+                            bbox = (
+                                float(img.get("x0", 0) or 0),
+                                float(img.get("top", 0) or 0),
+                                float(img.get("x1", 0) or 0),
+                                float(img.get("bottom", 0) or 0),
+                            )
+
+                            all_images.append(ImageInfo(
+                                page_number=page_num,
+                                image_index=img_index,
+                                width=int(img.get("width", 0) or 0),
+                                height=int(img.get("height", 0) or 0),
+                                bbox=bbox,
+                                image_bytes=image_bytes,
+                                image_format=image_format,
+                            ))
+                        except Exception as e:
+                            logger.debug(f"提取第{page_num}页第{img_index}张图片失败: {e}")
+                            continue
+                else:
+                    # 扫描件页面：把整页渲染为图片
                     try:
-                        xref = img_info[0]
-                        base_image = doc.extract_image(xref)
-
-                        if base_image is None:
-                            continue
-
-                        image_bytes = base_image.get("image")
-                        if not image_bytes or len(image_bytes) < 100:
-                            # 跳过太小的图片（可能是装饰元素）
-                            continue
-
-                        # 获取图片在页面中的位置
-                        bbox = self._get_image_bbox(page, xref, img_index)
-
-                        # 保存图片到文件
-                        image_format = base_image.get("ext", "png")
-                        image_filename = f"{filename_base}_p{page_num}_img{img_index}.{image_format}"
-                        image_path = os.path.join(output_dir, image_filename)
-
-                        with open(image_path, "wb") as f:
-                            f.write(image_bytes)
-
-                        image_info = ImageInfo(
-                            page_number=page_num,
-                            image_index=img_index,
-                            width=base_image.get("width", 0),
-                            height=base_image.get("height", 0),
-                            bbox=bbox,
-                            image_bytes=image_bytes,
-                            image_format=image_format,
-                        )
-                        all_images.append(image_info)
-
+                        page_img = page.to_image(resolution=150)
+                        pil_img = page_img.original
+                        img_buf = io.BytesIO()
+                        pil_img.save(img_buf, format="PNG")
+                        image_bytes = img_buf.getvalue()
+                        if image_bytes and len(image_bytes) >= 100:
+                            image_filename = f"{filename_base}_p{page_num}_img0.png"
+                            image_path = os.path.join(output_dir, image_filename)
+                            with open(image_path, "wb") as f:
+                                f.write(image_bytes)
+                            page_w = float(page.width or 0)
+                            page_h = float(page.height or 0)
+                            all_images.append(ImageInfo(
+                                page_number=page_num,
+                                image_index=0,
+                                width=pil_img.width,
+                                height=pil_img.height,
+                                bbox=(0.0, 0.0, page_w, page_h),
+                                image_bytes=image_bytes,
+                                image_format="png",
+                            ))
                     except Exception as e:
-                        logger.debug(f"提取第 {page_num} 页第 {img_index} 张图片失败: {e}")
-                        continue
+                        logger.debug(f"渲染第{page_num}页为图片失败: {e}")
 
             except Exception as e:
-                logger.error(f"处理第 {page_num} 页图片时失败: {e}", exc_info=True)
+                logger.error(f"处理第{page_num}页图片时失败: {e}", exc_info=True)
+                continue
 
         logger.info(f"图片提取完成: 共提取 {len(all_images)} 张图片，保存至 {output_dir}")
         return all_images
-
-    def _get_image_bbox(
-        self, page: fitz.Page, xref: int, img_index: int
-    ) -> Tuple[float, float, float, float]:
-        """
-        获取图片在页面中的位置（边界框）
-
-        Args:
-            page: PyMuPDF页面对象
-            xref: 图片的内部引用编号
-            img_index: 图片索引
-
-        Returns:
-            Tuple[float, float, float, float]: 边界框 (x0, y0, x1, y1)
-        """
-        try:
-            # 遍历页面中的图片引用，找到匹配xref的图片位置
-            for img in page.get_images(full=True):
-                if img[0] == xref:
-                    # 使用 page.get_image_rects 获取图片位置
-                    rects = page.get_image_rects(xref)
-                    if rects:
-                        rect = rects[0]
-                        return (rect.x0, rect.y0, rect.x1, rect.y1)
-                    break
-        except Exception as e:
-            logger.debug(f"获取图片位置失败: {e}")
-
-        return (0.0, 0.0, 0.0, 0.0)
 
     def _describe_image(self, image_bytes: bytes, image_format: str = "png") -> Optional[str]:
         try:
@@ -576,7 +439,6 @@ class PDFParser:
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
             )
 
-            # 将图片转为base64
             mime_type = "image/jpeg" if image_format in ("jpg", "jpeg") else "image/png"
             base64_str = base64.b64encode(image_bytes).decode("utf-8")
 
@@ -607,139 +469,234 @@ class PDFParser:
             return None
 
     def _extract_and_describe_images(
-        self, output_dir: str, filename_base: str
+        self, output_dir: str, filename_base: str, generate_descriptions: bool = False
     ) -> List[Dict]:
         """
-        提取PDF中的图片并生成描述，每页最多处理3张
+        提取并生成图片描述（v13 纯 PIL 版，无 pypdfium2 依赖）
 
-        Args:
-            output_dir: 图片保存目录
-            filename_base: 文件名基础部分（不含扩展名）
-
-        Returns:
-            List[Dict]: 图片描述段落列表，每个包含 page, title, content, level, metadata
+        v13 核心修复（2026-06-04）：
+        - 移除 page.to_image() 调用（需 pypdfium2，LoongArch 无此模块）
+        - 改为从 page.images 提取每张嵌入图，用 PIL 转成标准 PNG
+        - DCTDecode(JPEG): 字节是合法 JPEG → PIL.open() → 保存 PNG
+        - FlateDecode: 字节是原始 RGB 像素 → Image.frombuffer() → 保存 PNG
+        - 无嵌入图的页面跳过，不生成伪图片
+        - max_images_per_page = 3（控制单页图片数量）
         """
         doc = self._open_document()
-        total_pages = len(doc)
-        if self.max_pages is not None:
-            total_pages = min(total_pages, self.max_pages)
+        try:
+            total_pages = len(doc.pages)
+            if self.max_pages is not None:
+                total_pages = min(total_pages, self.max_pages)
 
-        os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok=True)
 
-        image_descriptions: List[Dict] = []
-        max_images_per_page = 3
+            image_descriptions: List[Dict] = []
+            success_count = 0
+            fail_count = 0
+            max_images_per_page = 3
 
-        for page_num in range(1, total_pages + 1):
-            try:
-                page = doc[page_num - 1]
-                image_list = page.get_images(full=True)
+            from PIL import Image as _PIL
 
-                images_to_process = image_list[:max_images_per_page]
+            for page_num in range(1, total_pages + 1):
+                try:
+                    page = doc.pages[page_num - 1]
+                    raw_images = page.images or []
 
-                def _describe_image_task(img_data, page_num, img_idx):
-                    try:
-                        xref = img_data[0]
-                        base_image = doc.extract_image(xref)
+                    if not raw_images:
+                        continue
 
-                        if base_image is None:
-                            return None
+                    for img_idx, img_data in enumerate(raw_images[:max_images_per_page]):
+                        try:
+                            stream = img_data.get("stream")
+                            if stream is None:
+                                continue
 
-                        image_bytes = base_image.get("image")
-                        if not image_bytes or len(image_bytes) < 100:
-                            return None
+                            image_bytes = None
+                            if hasattr(stream, "get_data"):
+                                try:
+                                    image_bytes = stream.get_data()
+                                except Exception:
+                                    image_bytes = None
+                            if image_bytes is None and hasattr(stream, "data"):
+                                try:
+                                    image_bytes = stream.data
+                                except Exception:
+                                    image_bytes = None
+                            if not image_bytes or len(image_bytes) < 100:
+                                continue
 
-                        image_format = base_image.get("ext", "png")
-                        image_filename = f"{filename_base}_p{page_num}_img{img_idx}.{image_format}"
-                        image_path = os.path.join(output_dir, image_filename)
+                            # 获取真实像素尺寸
+                            # 注意：img_data["width"/"height"] 是 PDF 点坐标（72DPI），不是像素
+                            # 真实像素尺寸在 stream 的属性里（Width/Height 或 srcsize）
+                            stream = img_data.get("stream")
+                            w = 0
+                            h = 0
+                            # 方法1: stream 的 Width/Height 属性（真实像素尺寸）
+                            if stream:
+                                try:
+                                    w = int(stream.attrs.get("Width", 0))
+                                    h = int(stream.attrs.get("Height", 0))
+                                except Exception:
+                                    pass
+                            # 方法2: srcsize
+                            if w == 0 or h == 0:
+                                try:
+                                    srcsize = img_data.get("srcsize", (0, 0))
+                                    w = int(srcsize[0])
+                                    h = int(srcsize[1])
+                                except Exception:
+                                    pass
+                            # 方法3: 兜底用 PDF 点坐标（可能不正确但总比 0 好）
+                            if w == 0 or h == 0:
+                                w = int(img_data.get("width", 0) or 0)
+                                h = int(img_data.get("height", 0) or 0)
 
-                        with open(image_path, "wb") as f:
-                            f.write(image_bytes)
+                            # 用 PIL 将任意格式字节转成标准 PNG
+                            valid_png = None
+                            try:
+                                pil_img = _PIL.open(io.BytesIO(image_bytes))
+                                pil_img.load()
+                                buf = io.BytesIO()
+                                pil_img.save(buf, format="PNG")
+                                valid_png = buf.getvalue()
+                            except Exception:
+                                pass
 
-                        description = self._describe_image(image_bytes, image_format)
+                            # PIL.open 失败 → 尝试 zlib 解压后再 frombuffer
+                            # PDF FlateDecode 图片: stream.get_data() 返回 deflate 压缩字节
+                            if valid_png is None and w > 0 and h > 0:
+                                try:
+                                    # 先尝试 zlib 解压
+                                    raw_bytes = None
+                                    try:
+                                        import zlib
+                                        raw_bytes = zlib.decompress(image_bytes)
+                                    except Exception:
+                                        pass
 
-                        result_item = {
-                            "page": page_num,
-                            "title": f"[图片描述] 第{page_num}页图片{img_idx + 1}",
-                            "content": f"[图片描述] {description}" if description else f"[图片] 第{page_num}页图片{img_idx + 1}",
-                            "level": 0,
-                            "metadata": {
-                                "type": "image",
+                                    # 如果 zlib 解压失败，尝试跳过 zlib header (raw deflate)
+                                    if raw_bytes is None:
+                                        try:
+                                            import zlib
+                                            raw_bytes = zlib.decompress(image_bytes, -15)
+                                        except Exception:
+                                            pass
+
+                                    use_bytes = raw_bytes if raw_bytes else image_bytes
+
+                                    cs_raw = img_data.get("colorspace") or ""
+                                    # colorspace 可能是 list（如 [/DeviceRGB]）或 str
+                                    if isinstance(cs_raw, list):
+                                        cs = " ".join(str(x) for x in cs_raw).lower()
+                                    else:
+                                        cs = str(cs_raw).lower()
+                                    if "rgb" in cs:
+                                        mode = "RGB"
+                                    elif "gray" in cs or cs == "g" or cs == "/devicegray":
+                                        mode = "L"
+                                    elif "cmyk" in cs:
+                                        mode = "CMYK"
+                                    else:
+                                        if len(use_bytes) == w * h:
+                                            mode = "L"
+                                        elif len(use_bytes) == w * h * 3:
+                                            mode = "RGB"
+                                        elif len(use_bytes) == w * h * 4:
+                                            mode = "RGBA"
+                                        else:
+                                            raise ValueError(f"bytes={len(use_bytes)} 与 {w}x{h} 不匹配")
+
+                                    pil_img = _PIL.frombuffer(mode, (w, h), use_bytes)
+                                    if mode == "CMYK":
+                                        pil_img = pil_img.convert("RGB")
+                                    buf = io.BytesIO()
+                                    pil_img.save(buf, format="PNG")
+                                    valid_png = buf.getvalue()
+                                except Exception as e:
+                                    logger.warning(f"第{page_num}页图{img_idx} frombuffer 失败: {e}")
+
+                            if valid_png is None or len(valid_png) < 100:
+                                logger.warning(f"第{page_num}页图{img_idx} 转 PNG 失败（bytes={len(image_bytes)}, w={w}, h={h}）")
+                                fail_count += 1
+                                continue
+
+                            image_filename = f"{filename_base}_p{page_num}_img{img_idx}.png"
+                            image_path = os.path.join(output_dir, image_filename)
+
+                            with open(image_path, "wb") as f:
+                                f.write(valid_png)
+
+                            description = None
+                            if generate_descriptions:
+                                try:
+                                    description = self._describe_image(valid_png, "png")
+                                except Exception as desc_err:
+                                    logger.warning(f"第{page_num}页图{img_idx} AI 描述失败: {desc_err}")
+
+                            result_item = {
                                 "page": page_num,
-                                "image_path": image_path,
-                                "image_index": img_idx,
-                                "has_description": bool(description),
-                            },
-                        }
-                        return result_item
-                    except Exception as e:
-                        logger.debug(f"处理第{page_num}页第{img_idx}张图片失败: {e}")
-                        return None
+                                "title": f"[图片描述] 第{page_num}页图片{img_idx + 1}",
+                                "content": f"[图片描述] {description}" if description else f"[图片] 第{page_num}页图片{img_idx + 1}",
+                                "level": 0,
+                                "metadata": {
+                                    "type": "image",
+                                    "page": page_num,
+                                    "image_path": image_path,
+                                    "image_index": img_idx,
+                                    "has_description": bool(description),
+                                    "is_full_page_render": False,
+                                },
+                            }
+                            image_descriptions.append(result_item)
+                            success_count += 1
 
-                with ThreadPoolExecutor(max_workers=3) as executor:
-                    futures = []
-                    for img_index, img_info in enumerate(images_to_process):
-                        futures.append(executor.submit(_describe_image_task, img_info, page_num, img_index))
-                    for future in as_completed(futures):
-                        result = future.result()
-                        if result:
-                            image_descriptions.append(result)
-                            logger.info(f"已生成第{result['page']}页第{result['metadata']['image_index'] + 1}张图片的描述")
+                        except Exception as e:
+                            logger.warning(f"第{page_num}页图{img_idx} 处理失败: {type(e).__name__}: {e}")
+                            fail_count += 1
+                            continue
 
-            except Exception as e:
-                logger.error(f"处理第{page_num}页图片时失败: {e}", exc_info=True)
+                except Exception as e:
+                    logger.error(f"处理第{page_num}页时失败: {type(e).__name__}: {e}", exc_info=True)
+                    fail_count += 1
+                    continue
 
-        logger.info(f"图片描述生成完成: 共处理 {len(image_descriptions)} 张图片")
-        return image_descriptions
+            logger.info(f"图片提取完成: 共 {len(image_descriptions)} 张图片（成功 {success_count}, 失败 {fail_count}，描述{'已生成' if generate_descriptions else '待后台生成'}）")
+            return image_descriptions
+        finally:
+            try:
+                if doc is not None:
+                    doc.close()
+            except Exception:
+                pass
 
     def parse_pdf(self) -> dict:
-        """
-        主入口：解析PDF文档，返回完整的解析结果
-
-        整合文本提取、表格提取、图片提取和图片描述生成，
-        返回统一的结构化数据。图片描述通过通义千问多模态模型
-        自动生成，作为特殊段落加入解析结果。
-
-        Returns:
-            dict: 完整的解析结果，包含以下字段：
-                - filename: 文件名
-                - metadata: 文档元数据
-                - paragraphs: 文本段落列表（含图片描述段落），每个包含 page, title, content, level
-                - tables: 表格数据列表
-                - images: 图片信息列表
-                - total_pages: 总页数
-        """
         doc = self._open_document()
-        total_pages = len(doc)
+        total_pages = len(doc.pages)
         if self.max_pages is not None:
             total_pages = min(total_pages, self.max_pages)
 
         logger.info(f"开始解析PDF: {self.file_path}, 共 {total_pages} 页")
 
-        # 提取元数据
         metadata = self.get_metadata()
-
-        # 提取结构化文本
         paragraphs = self.extract_text()
-
-        # 提取表格
         tables = self.extract_tables()
+        # 修复：删除冗余的 self.extract_images() 调用
+        # 原 bug：_extract_and_describe_images 也会保存图片到磁盘，
+        #        pdfplumber stream 二次读取会返回损坏数据，
+        #        导致 5MB+ 的损坏文件覆盖了正确的 1.25MB PNG。
+        # 现在只调用一次 _extract_and_describe_images（唯一进入 paragraphs metadata 的入口）。
+        images: List[ImageInfo] = []  # 保留字段为空，避免破坏返回结构
 
-        # 提取图片（保存到默认目录）
-        images = self.extract_images()
-
-        # 提取图片并生成描述（每页最多3张）
         filename_base = os.path.splitext(os.path.basename(self.file_path))[0]
         image_descriptions = self._extract_and_describe_images(
             output_dir=settings.IMAGE_DIR,
             filename_base=filename_base,
         )
 
-        # 将图片描述段落合并到文本段落中，按页码排序插入
         all_paragraphs = []
         text_para_idx = 0
         img_desc_idx = 0
 
-        # 将普通段落转为字典列表
         text_paragraphs = [
             {
                 "page": p.page,
@@ -750,7 +707,6 @@ class PDFParser:
             for p in paragraphs
         ]
 
-        # 按页码合并：图片描述插入到对应页码的文本段落之后
         while text_para_idx < len(text_paragraphs) or img_desc_idx < len(image_descriptions):
             if text_para_idx < len(text_paragraphs):
                 text_page = text_paragraphs[text_para_idx]["page"]
@@ -762,11 +718,9 @@ class PDFParser:
             else:
                 img_page = float("inf")
 
-            # 优先添加文本段落
             if text_page <= img_page:
                 all_paragraphs.append(text_paragraphs[text_para_idx])
                 text_para_idx += 1
-                # 如果图片描述的页码等于当前文本段落页码，插入图片描述
                 while img_desc_idx < len(image_descriptions) and image_descriptions[img_desc_idx]["page"] <= text_page:
                     all_paragraphs.append(image_descriptions[img_desc_idx])
                     img_desc_idx += 1
@@ -774,12 +728,10 @@ class PDFParser:
                 all_paragraphs.append(image_descriptions[img_desc_idx])
                 img_desc_idx += 1
 
-        # 添加剩余的图片描述
         while img_desc_idx < len(image_descriptions):
             all_paragraphs.append(image_descriptions[img_desc_idx])
             img_desc_idx += 1
 
-        # 构建完整的解析结果
         result = {
             "filename": os.path.basename(self.file_path),
             "metadata": metadata,
@@ -818,30 +770,14 @@ class PDFParser:
         return result
 
     def parse_page(self, page_number: int) -> PDFPage:
-        """
-        解析单个页面，提取文本、表格和图片
-
-        Args:
-            page_number: 页码（从1开始）
-
-        Returns:
-            PDFPage: 页面解析结果
-
-        Raises:
-            ValueError: 页码超出范围
-        """
         doc = self._open_document()
-        if page_number < 1 or page_number > len(doc):
-            raise ValueError(f"页码超出范围: {page_number}, 文档共 {len(doc)} 页")
+        if page_number < 1 or page_number > len(doc.pages):
+            raise ValueError(f"页码超出范围: {page_number}, 文档共 {len(doc.pages)} 页")
 
-        # 提取文本
-        page = doc[page_number - 1]
-        text = page.get_text("text").strip()
+        page = doc.pages[page_number - 1]
+        text = (page.extract_text() or "").strip()
 
-        # 提取表格
         tables = self._extract_tables_for_page(page_number)
-
-        # 提取图片
         images = self._extract_images_for_page(page_number)
 
         return PDFPage(
@@ -852,81 +788,160 @@ class PDFParser:
         )
 
     def _extract_tables_for_page(self, page_number: int) -> List[TableData]:
-        """
-        提取指定页面的表格数据
-
-        Args:
-            page_number: 页码（从1开始）
-
-        Returns:
-            List[TableData]: 表格数据列表
-        """
         try:
-            with pdfplumber.open(self.file_path) as pdf:
-                pdf_page = pdf.pages[page_number - 1]
-                tables = pdf_page.extract_tables()
+            doc = self._open_document()
+            page = doc.pages[page_number - 1]
+            tables = page.extract_tables() or []
 
-                result = []
-                for table_idx, table in enumerate(tables):
-                    cleaned_rows = []
-                    for row in table:
-                        cleaned_row = [cell.strip() if cell else "" for cell in row]
-                        if any(cell for cell in cleaned_row):
-                            cleaned_rows.append(cleaned_row)
+            result = []
+            for table_idx, table in enumerate(tables):
+                cleaned_rows = []
+                for row in table:
+                    cleaned_row = [cell.strip() if cell else "" for cell in row]
+                    if any(cell for cell in cleaned_row):
+                        cleaned_rows.append(cleaned_row)
 
-                    if cleaned_rows:
-                        caption = self._extract_table_caption(pdf_page, table_idx)
-                        result.append(TableData(
-                            page_number=page_number,
-                            rows=cleaned_rows,
-                            caption=caption,
-                        ))
+                if cleaned_rows:
+                    caption = self._extract_table_caption(page, table_idx)
+                    result.append(TableData(
+                        page_number=page_number,
+                        rows=cleaned_rows,
+                        caption=caption,
+                    ))
 
-                return result
-
+            return result
         except Exception as e:
             logger.error(f"提取第 {page_number} 页表格失败: {e}", exc_info=True)
             return []
 
     def _extract_images_for_page(self, page_number: int) -> List[ImageInfo]:
-        """
-        提取指定页面的图片信息
-
-        Args:
-            page_number: 页码（从1开始）
-
-        Returns:
-            List[ImageInfo]: 图片信息列表
-        """
         doc = self._open_document()
-        page = doc[page_number - 1]
-        images = []
-        image_list = page.get_images(full=True)
+        page = doc.pages[page_number - 1]
+        images: List[ImageInfo] = []
+        raw_images = page.images or []
 
-        for img_index, img_info in enumerate(image_list):
+        if not raw_images:
+            return images
+
+        from PIL import Image as _PIL
+
+        for img_index, img in enumerate(raw_images):
             try:
-                xref = img_info[0]
-                base_image = doc.extract_image(xref)
-
-                if base_image is None:
+                stream = img.get("stream")
+                if stream is None:
                     continue
-
-                image_bytes = base_image.get("image")
+                image_bytes = None
+                if hasattr(stream, "get_data"):
+                    try:
+                        image_bytes = stream.get_data()
+                    except Exception:
+                        image_bytes = None
+                if image_bytes is None and hasattr(stream, "data"):
+                    try:
+                        image_bytes = stream.data
+                    except Exception:
+                        image_bytes = None
                 if not image_bytes or len(image_bytes) < 100:
                     continue
 
-                bbox = self._get_image_bbox(page, xref, img_index)
+                # 获取真实像素尺寸（同 _extract_and_describe_images 的逻辑）
+                stream_obj = img.get("stream")
+                w = 0
+                h = 0
+                if stream_obj:
+                    try:
+                        w = int(stream_obj.attrs.get("Width", 0))
+                        h = int(stream_obj.attrs.get("Height", 0))
+                    except Exception:
+                        pass
+                if w == 0 or h == 0:
+                    try:
+                        srcsize = img.get("srcsize", (0, 0))
+                        w = int(srcsize[0])
+                        h = int(srcsize[1])
+                    except Exception:
+                        pass
+                if w == 0 or h == 0:
+                    w = int(img.get("width", 0) or 0)
+                    h = int(img.get("height", 0) or 0)
 
+                # 用 PIL 转成标准 PNG
+                valid_png = None
+                try:
+                    pil_img = _PIL.open(io.BytesIO(image_bytes))
+                    pil_img.load()
+                    buf = io.BytesIO()
+                    pil_img.save(buf, format="PNG")
+                    valid_png = buf.getvalue()
+                except Exception:
+                    pass
+
+                # PIL.open 失败 → 尝试 zlib 解压后再 frombuffer
+                if valid_png is None and w > 0 and h > 0:
+                    try:
+                        raw_bytes = None
+                        try:
+                            import zlib
+                            raw_bytes = zlib.decompress(image_bytes)
+                        except Exception:
+                            pass
+                        if raw_bytes is None:
+                            try:
+                                import zlib
+                                raw_bytes = zlib.decompress(image_bytes, -15)
+                            except Exception:
+                                pass
+
+                        use_bytes = raw_bytes if raw_bytes else image_bytes
+
+                        cs_raw = img.get("colorspace") or ""
+                        if isinstance(cs_raw, list):
+                            cs = " ".join(str(x) for x in cs_raw).lower()
+                        else:
+                            cs = str(cs_raw).lower()
+                        if "rgb" in cs:
+                            mode = "RGB"
+                        elif "gray" in cs or cs == "g" or cs == "/devicegray":
+                            mode = "L"
+                        elif "cmyk" in cs:
+                            mode = "CMYK"
+                        else:
+                            if len(use_bytes) == w * h:
+                                mode = "L"
+                            elif len(use_bytes) == w * h * 3:
+                                mode = "RGB"
+                            elif len(use_bytes) == w * h * 4:
+                                mode = "RGBA"
+                            else:
+                                raise ValueError(f"bytes={len(use_bytes)} 不匹配 {w}x{h}")
+
+                        pil_img = _PIL.frombuffer(mode, (w, h), use_bytes)
+                        if mode == "CMYK":
+                            pil_img = pil_img.convert("RGB")
+                        buf = io.BytesIO()
+                        pil_img.save(buf, format="PNG")
+                        valid_png = buf.getvalue()
+                    except Exception:
+                        pass
+
+                if valid_png is None or len(valid_png) < 100:
+                    logger.debug(f"第{page_number}页图{img_index} 转 PNG 失败（bytes={len(image_bytes)}, w={w}, h={h}）")
+                    continue
+
+                bbox = (
+                    float(img.get("x0", 0) or 0),
+                    float(img.get("top", 0) or 0),
+                    float(img.get("x1", 0) or 0),
+                    float(img.get("bottom", 0) or 0),
+                )
                 images.append(ImageInfo(
                     page_number=page_number,
                     image_index=img_index,
-                    width=base_image.get("width", 0),
-                    height=base_image.get("height", 0),
+                    width=w, height=h,
                     bbox=bbox,
-                    image_bytes=image_bytes,
-                    image_format=base_image.get("ext", "png"),
+                    image_bytes=valid_png,
+                    image_format="png",
                 ))
-
             except Exception as e:
                 logger.debug(f"提取第 {page_number} 页第 {img_index} 张图片失败: {e}")
                 continue
@@ -934,14 +949,8 @@ class PDFParser:
         return images
 
     def parse(self) -> PDFDocument:
-        """
-        解析整个PDF文档（兼容旧接口）
-
-        Returns:
-            PDFDocument: 完整的文档解析结果
-        """
         doc = self._open_document()
-        total_pages = len(doc)
+        total_pages = len(doc.pages)
 
         if self.max_pages is not None:
             total_pages = min(total_pages, self.max_pages)
@@ -974,20 +983,12 @@ class PDFParser:
         return result
 
     def get_full_text(self) -> str:
-        """
-        获取文档全部文本内容（按页拼接）
-
-        Returns:
-            str: 完整文本
-        """
         doc = self.parse()
         full_text = "\n".join(page.text for page in doc.pages if page.text.strip())
         return full_text
 
     def __enter__(self):
-        """上下文管理器入口"""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """上下文管理器出口，确保资源释放"""
         self._close_document()

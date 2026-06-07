@@ -2,12 +2,12 @@
 图片检索模块
 
 实现基于多模态能力的图片检索功能：
-- 以图搜图：上传图片，使用LLM视觉能力描述图片内容，然后进行文本检索
+- 以图搜图：上传图片，使用视觉模型描述图片内容，然后进行文本检索
 - 图文跨模态检索：根据文本描述搜索相关图片
 - 图片与设备文档的关联匹配
 
-由于纯图片向量检索较复杂，采用"图片 -> LM视觉描述 -> 文本检索"的方案。
-使用通义千问的多模态能力（qwen-vl-max）来描述图片内容。
+方案："图片 -> 视觉模型描述 -> 文本Embedding -> 向量检索"
+支持多厂商视觉API（DashScope/DeepSeek/智谱/OpenAI兼容），带重试和降级策略。
 """
 
 import base64
@@ -16,8 +16,15 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+
 from app.config import settings
-from app.services.llm_service import get_llm_service
+from app.services.vision_service import get_vision_service
 
 logger = logging.getLogger(__name__)
 
@@ -50,16 +57,15 @@ class ImageRetriever:
     """
     图片检索器
 
-    使用通义千问多模态模型（qwen-vl-max）描述图片内容，
+    使用视觉服务（VisionService）描述图片内容，
     然后通过文本检索在知识库中查找相关内容。
     支持以图搜图和图文跨模态检索。
 
-    方案：图片 -> LLM视觉描述 -> 文本Embedding -> 向量检索
+    方案：图片 -> 视觉描述 -> 文本Embedding -> 向量检索
 
     Attributes:
         image_dir: 图片存储目录
         collection_name: ChromaDB图片集合名称
-        vl_model: 多模态模型名称
     """
 
     # 图片描述提示词
@@ -73,11 +79,13 @@ class ImageRetriever:
 
 请用简洁的中文描述，重点提取可用于检索的关键信息。"""
 
+    # 降级检索用的通用关键词
+    FALLBACK_QUERY = "设备检修 故障诊断 维修操作 安全规范 设备维护 技术参数"
+
     def __init__(
         self,
         image_dir: Optional[str] = None,
         collection_name: str = "equipment_images",
-        vl_model: str = "qwen-vl-max",
     ):
         """
         初始化图片检索器
@@ -85,14 +93,18 @@ class ImageRetriever:
         Args:
             image_dir: 图片存储目录
             collection_name: ChromaDB集合名称
-            vl_model: 多模态视觉模型名称
         """
         self.image_dir = image_dir or settings.IMAGE_DIR
         self.collection_name = collection_name
-        self.vl_model = vl_model
-        self.llm_service = get_llm_service()
+        self._vision_service = None
         self._collection = None
         self._client = None
+
+    def _get_vision(self):
+        """懒加载 VisionService 单例"""
+        if self._vision_service is None:
+            self._vision_service = get_vision_service()
+        return self._vision_service
 
     def init_collection(self) -> None:
         """
@@ -134,76 +146,47 @@ class ImageRetriever:
         if self._collection is None:
             self.init_collection()
 
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+        reraise=True,
+    )
     def _extract_image_features(self, image_bytes: bytes) -> str:
         """
-        提取图片特征描述
+        提取图片特征描述（带重试）
 
-        使用通义千问多模态模型（qwen-vl-max）描述图片内容，
-        将图片转换为可用于检索的文本描述。
+        使用 VisionService 调用视觉模型描述图片内容，
+        自动获得多厂商支持和 fallback 逻辑。
 
         Args:
             image_bytes: 图片二进制数据
 
         Returns:
             str: 图片内容的文本描述
+
+        Raises:
+            RuntimeError: 视觉模型无法生成描述时抛出
         """
-        try:
-            # 将图片转为base64
-            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+        # 判断图片格式后缀
+        ext = "png"
+        if image_bytes[:2] == b'\xff\xd8':
+            ext = "jpg"
+        elif image_bytes[:4] == b'\x89PNG':
+            ext = "png"
+        elif image_bytes[:4] == b'GIF8':
+            ext = "gif"
+        elif image_bytes[:4] == b'RIFF':
+            ext = "webp"
 
-            # 判断图片格式
-            image_format = "image/png"
-            if image_bytes[:2] == b'\xff\xd8':
-                image_format = "image/jpeg"
-            elif image_bytes[:4] == b'\x89PNG':
-                image_format = "image/png"
-            elif image_bytes[:4] == b'GIF8':
-                image_format = "image/gif"
-            elif image_bytes[:4] == b'RIFF':
-                image_format = "image/webp"
+        # 使用 VisionService（自动处理多厂商、fallback、错误日志）
+        vision = self._get_vision()
+        description = vision.describe_image(image_bytes, ext, prompt=self.IMAGE_DESCRIPTION_PROMPT)
+        if description is None:
+            raise RuntimeError("视觉模型返回空描述，请检查 VISION_API_KEY / VISION_MODEL_NAME 配置")
 
-            # 构建多模态消息
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{image_format};base64,{image_base64}"
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": self.IMAGE_DESCRIPTION_PROMPT
-                        }
-                    ]
-                }
-            ]
-
-            # 使用视觉模型生成描述
-            # 创建一个临时的LLM服务实例，使用视觉模型
-            from openai import OpenAI
-
-            client = OpenAI(
-                api_key=self.llm_service.api_key,
-                base_url=self.llm_service.base_url,
-            )
-
-            response = client.chat.completions.create(
-                model=self.vl_model,
-                messages=messages,
-                temperature=0.3,
-                max_tokens=500,
-            )
-
-            description = response.choices[0].message.content
-            logger.info(f"图片描述生成成功: {description[:100]}...")
-            return description
-
-        except Exception as e:
-            logger.error(f"图片特征提取失败: {e}", exc_info=True)
-            raise RuntimeError(f"图片描述生成失败: {str(e)}")
+        logger.info(f"图片描述生成成功: {description[:100]}...")
+        return description
 
     def search_by_image(
         self,
@@ -216,7 +199,7 @@ class ImageRetriever:
 
         流程：
         1. 读取图片文件
-        2. 使用多模态模型描述图片内容
+        2. 使用视觉模型描述图片内容
         3. 使用描述文本在知识库中检索相关内容
 
         Args:
@@ -247,8 +230,8 @@ class ImageRetriever:
         try:
             description = self._extract_image_features(image_bytes)
         except Exception as e:
-            logger.error(f"图片描述生成失败: {e}", exc_info=True)
-            return []
+            logger.error(f"图片描述生成失败，尝试降级: {e}")
+            return self._fallback_search(top_k)
 
         # 使用描述文本在知识库中检索
         return self.search_by_text_for_images(description, top_k, threshold)
@@ -321,7 +304,6 @@ class ImageRetriever:
 
                 # 如果文件不存在，尝试在image_dir下搜索
                 if not os.path.exists(image_path):
-                    # 尝试通过模糊匹配找到图片文件
                     image_path = self._find_image_file(image_id, meta)
 
                 search_results.append(ImageSearchResult(
@@ -351,12 +333,10 @@ class ImageRetriever:
         if not os.path.exists(self.image_dir):
             return ""
 
-        # 尝试通过source_document和page_number查找
         source = metadata.get("source_document", "")
         page = metadata.get("page_number", "")
 
         if source and page:
-            # 尝试匹配文件名模式：{source}_p{page}_img*.*
             for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
                 pattern = f"*_p{page}_img*.{ext}"
                 import glob
@@ -364,7 +344,6 @@ class ImageRetriever:
                 if matches:
                     return matches[0]
 
-        # 尝试通过image_id查找
         for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
             candidate = os.path.join(self.image_dir, f"{image_id}.{ext}")
             if os.path.exists(candidate):
@@ -385,37 +364,22 @@ class ImageRetriever:
         添加图片到检索库
 
         流程：
-        1. 使用多模态模型生成图片描述
+        1. 使用视觉模型生成图片描述
         2. 将描述文本向量化
         3. 存入ChromaDB（包含图片元数据）
-
-        Args:
-            image_id: 图片唯一标识
-            image_bytes: 图片二进制数据
-            source_document: 来源文档名
-            page_number: 页码
-            caption: 图片说明
-            metadata: 附加元数据
-
-        Returns:
-            bool: 是否添加成功
         """
         self._ensure_collection()
 
         try:
-            # 生成图片描述
             description = self._extract_image_features(image_bytes)
 
-            # 如果有手动提供的caption，合并到描述中
             if caption:
                 description = f"{caption}\n{description}"
 
-            # 生成描述文本的Embedding
             from app.services.embedding_service import get_embedding_service
             embedding_service = get_embedding_service()
             embedding = embedding_service.embed_text(description)
 
-            # 构建元数据
             img_metadata = {
                 "source_document": source_document or "",
                 "page_number": page_number or 0,
@@ -423,7 +387,6 @@ class ImageRetriever:
                 "image_id": image_id,
             }
 
-            # 合并附加元数据
             if metadata:
                 for key, value in metadata.items():
                     if value is not None and key not in img_metadata:
@@ -432,7 +395,6 @@ class ImageRetriever:
                         else:
                             img_metadata[key] = str(value)
 
-            # 存入ChromaDB
             self._collection.add(
                 ids=[image_id],
                 documents=[description],
@@ -453,9 +415,10 @@ class ImageRetriever:
         top_k: int = 5,
     ) -> List[ImageSearchResult]:
         """
-        通用图片检索入口
+        通用图片检索入口（带降级策略）
 
         接收Base64编码的图片，进行以图搜图。
+        当视觉模型不可用时，自动降级为通用关键词宽泛检索。
 
         Args:
             image_base64: Base64编码的图片
@@ -467,26 +430,35 @@ class ImageRetriever:
         try:
             image_bytes = base64.b64decode(image_base64)
 
-            # 提取图片特征描述
+            if len(image_bytes) < 100:
+                logger.warning("上传图片过小，可能不是有效图片")
+                return []
+
+            # 提取图片特征描述（内部已带重试）
             description = self._extract_image_features(image_bytes)
 
             # 使用描述文本检索
             return self.search_by_text_for_images(description, top_k)
 
         except Exception as e:
-            logger.error(f"图片检索失败: {e}", exc_info=True)
-            return []
+            logger.warning(f"视觉模型描述失败，启用降级检索: {e}")
+            return self._fallback_search(top_k)
 
-    def delete_image(self, image_id: str) -> bool:
+    def _fallback_search(self, top_k: int = 5) -> List[ImageSearchResult]:
         """
-        从检索库中删除图片
+        降级检索：视觉模型不可用时，用通用设备关键词做宽泛检索
 
         Args:
-            image_id: 图片ID
+            top_k: 返回结果数量
 
         Returns:
-            bool: 是否删除成功
+            List[ImageSearchResult]: 宽泛检索结果
         """
+        logger.info(f"执行降级检索，查询词: '{self.FALLBACK_QUERY}'")
+        return self.search_by_text_for_images(self.FALLBACK_QUERY, top_k, threshold=0.15)
+
+    def delete_image(self, image_id: str) -> bool:
+        """从检索库中删除图片"""
         self._ensure_collection()
 
         try:
@@ -498,12 +470,7 @@ class ImageRetriever:
             return False
 
     def get_stats(self) -> dict:
-        """
-        获取图片检索库统计信息
-
-        Returns:
-            dict: 统计信息
-        """
+        """获取图片检索库统计信息"""
         self._ensure_collection()
 
         try:

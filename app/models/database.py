@@ -145,6 +145,7 @@ class Database:
                 device_model TEXT DEFAULT '',
                 fault_type TEXT DEFAULT '',
                 solution TEXT DEFAULT '',
+                equipment_type TEXT DEFAULT '',
                 fault_analysis TEXT,
                 repair_process TEXT,
                 lessons_learned TEXT,
@@ -337,6 +338,24 @@ class Database:
             )
         """)
 
+        # ========== 抽取任务表 ==========
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS extraction_tasks (
+                task_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL DEFAULT 'pending',
+                source TEXT NOT NULL DEFAULT '',
+                total INTEGER DEFAULT 0,
+                current INTEGER DEFAULT 0,
+                progress INTEGER DEFAULT 0,
+                success_count INTEGER DEFAULT 0,
+                fail_count INTEGER DEFAULT 0,
+                results TEXT DEFAULT '[]',
+                error TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
         # ========== 创建索引 ==========
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status)")
@@ -359,6 +378,31 @@ class Database:
 
         try:
             cursor.execute("ALTER TABLE feedback ADD COLUMN applied INTEGER DEFAULT 0")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE cases ADD COLUMN equipment_type TEXT DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE cases ADD COLUMN fault_analysis TEXT")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE cases ADD COLUMN repair_process TEXT")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE cases ADD COLUMN lessons_learned TEXT")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE cases ADD COLUMN tags TEXT")
         except Exception:
             pass
 
@@ -747,6 +791,7 @@ class Database:
         page: int = 1,
         page_size: int = 20,
         status: Optional[str] = None,
+        exclude_rejected: bool = True,
     ) -> Dict[str, Any]:
         """
         获取文档列表
@@ -755,17 +800,22 @@ class Database:
             page: 页码
             page_size: 每页数量
             status: 状态筛选
+            exclude_rejected: 是否排除已拒绝的文档（默认True）
 
         Returns:
             dict: 文档列表和分页信息
         """
         conn = self.get_connection()
 
-        where_clause = ""
+        conditions = []
         params: list = []
         if status:
-            where_clause = "WHERE status = ?"
+            conditions.append("status = ?")
             params.append(status)
+        elif exclude_rejected:
+            conditions.append("status != 'rejected'")
+
+        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         count_result = conn.execute(
             f"SELECT COUNT(*) FROM documents {where_clause}", params

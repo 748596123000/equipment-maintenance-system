@@ -83,7 +83,7 @@ def validate_file_type(filename: str, content: bytes) -> Optional[str]:
     return ext
 
 
-def parse_document(file_path: str, filename: Optional[str] = None) -> dict:
+def parse_document(file_path: str, filename: Optional[str] = None, max_pages: Optional[int] = None) -> dict:
     if filename is None:
         filename = os.path.basename(file_path)
 
@@ -103,7 +103,7 @@ def parse_document(file_path: str, filename: Optional[str] = None) -> dict:
     image_extensions = {"jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp"}
 
     if ext in parsers:
-        return parsers[ext](file_path, filename)
+        return parsers[ext](file_path, filename, max_pages=max_pages)
     elif ext in text_extensions:
         return _parse_text(file_path, filename, ext)
     elif ext in image_extensions:
@@ -112,13 +112,13 @@ def parse_document(file_path: str, filename: Optional[str] = None) -> dict:
         raise ValueError(f"不支持的文件格式: .{ext}")
 
 
-def _parse_pdf(file_path: str, filename: str) -> dict:
+def _parse_pdf(file_path: str, filename: str, max_pages: Optional[int] = None) -> dict:
     from app.core.pdf_parser import PDFParser
-    parser = PDFParser(file_path)
+    parser = PDFParser(file_path, max_pages=max_pages)
     return parser.parse_pdf()
 
 
-def _parse_docx(file_path: str, filename: str) -> dict:
+def _parse_docx(file_path: str, filename: str, max_pages: Optional[int] = None) -> dict:
     try:
         from docx import Document
     except ImportError:
@@ -170,7 +170,7 @@ def _parse_docx(file_path: str, filename: str) -> dict:
     return _build_result(filename, paragraphs, doc_type="docx")
 
 
-def _parse_xlsx(file_path: str, filename: str) -> dict:
+def _parse_xlsx(file_path: str, filename: str, max_pages: Optional[int] = None) -> dict:
     try:
         from openpyxl import load_workbook
     except ImportError:
@@ -207,7 +207,7 @@ def _parse_xlsx(file_path: str, filename: str) -> dict:
     return _build_result(filename, paragraphs, doc_type="xlsx", page_count=len(wb.sheetnames))
 
 
-def _parse_pptx(file_path: str, filename: str) -> dict:
+def _parse_pptx(file_path: str, filename: str, max_pages: Optional[int] = None) -> dict:
     try:
         from pptx import Presentation
     except ImportError:

@@ -84,7 +84,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 function getButtonStyles(variant: string): string {
   switch (variant) {
     case 'default':
-      return 'bg-gradient-to-r from-[var(--cyber-cyan)] to-[var(--cyber-blue)] text-black shadow-lg hover:shadow-[0_0_30px_rgba(0,240,255,0.3)] dark:text-black light:text-white'
+      // v4 tailwind 默认就是亮色，dark: 为暗色变体
+      return 'bg-gradient-to-r from-[var(--cyber-cyan)] to-[var(--cyber-blue)] text-white shadow-lg hover:shadow-[0_0_30px_rgba(0,240,255,0.3)] dark:text-black'
     case 'destructive':
       return 'bg-[var(--color-error,#ef4444)] text-white hover:opacity-90'
     case 'outline':

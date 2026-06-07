@@ -1,32 +1,58 @@
+# 核心Web框架
 fastapi
 uvicorn[standard]
+
+# 数据库和向量存储
 chromadb
+sqlalchemy
+
+# 配置和验证
 pydantic
 pydantic-settings
+python-dotenv
+
+# 认证和安全
 bcrypt
 python-jose[cryptography]
 python-multipart
-pillow
+itsdangerous
+
+# 文档处理
 pymupdf
 pdfplumber
-dashscope
-openai
-sqlalchemy
-langchain
-langchain-community
-pytesseract
 pdf2image
 python-docx
 openpyxl
 python-pptx
+pillow
+pytesseract
 beautifulsoup4
+
+# NLP和文本处理
 jieba
+langchain
+langchain-community
+
+# LLM API
+dashscope
+openai
+gradio-client
+
+# HTTP和网络
 httpx
-python-dotenv
-itsdangerous
 aiohttp
+requests
+
+# 模板和缓存
 jinja2
 cachetools
+
+# 工具
 tqdm
-gradio-client
 tenacity
+
+# GPU/ML依赖 (可选，用于本地视觉模型和Embedding)
+torch
+transformers
+accelerate
+sentence-transformers

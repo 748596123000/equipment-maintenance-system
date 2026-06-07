@@ -21,7 +21,8 @@ interface ChatState {
     sessionKey: string,
     question: string,
     searchMode?: string,
-    topK?: number
+    topK?: number,
+    imageBase64?: string
   ) => Promise<void>;
 }
 
@@ -65,7 +66,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     sessionKey: string,
     question: string,
     searchMode?: string,
-    topK?: number
+    topK?: number,
+    imageBase64?: string
   ) => {
     const { addMessage, sessions } = get();
 
@@ -77,6 +79,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         search_mode: searchMode || "hybrid",
         top_k: topK || 5,
       };
+      if (imageBase64) {
+        payload.image_base64 = imageBase64;
+      }
 
       const sessionId = sessions[sessionKey]?.sessionId;
       if (sessionId) {
@@ -87,10 +92,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const { answer, sources, session_id } = response.data;
 
+      // 后端 sources 中字段为 source，前端映射为 title
+      const mappedSources = sources?.map((s: Record<string, unknown>) => ({
+        title: (s.title as string) || (s.source as string) || '',
+        content: (s.content as string) || '',
+        score: s.score as number | undefined,
+      }));
+
       addMessage(sessionKey, {
         role: "assistant",
         content: answer,
-        sources,
+        sources: mappedSources,
       });
 
       if (session_id) {

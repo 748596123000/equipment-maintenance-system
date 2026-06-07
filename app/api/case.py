@@ -89,16 +89,33 @@ async def create_case(request: CaseCreateRequest, current_user: dict = Depends(g
 
     try:
         conn = db.get_connection()
+        # 字段顺序: id, title, description, device_model, fault_type, solution,
+        #          equipment_type, fault_analysis, repair_process, lessons_learned,
+        #          tags, author_id, status, created_at, updated_at
+        # 值顺序必须与字段顺序一一对应
         conn.execute(
-            """INSERT INTO cases (id, title, description, device_model, fault_type, solution,
-               fault_analysis, repair_process, lessons_learned, tags,
-               author_id, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (case_id, request.title, request.fault_description, request.equipment_model,
-             "", request.repair_result,
-             request.fault_analysis, request.repair_process, request.lessons_learned,
-             json.dumps(request.tags, ensure_ascii=False) if request.tags else "",
-             current_user["id"], "pending_review", now, now),
+            """INSERT INTO cases
+               (id, title, description, device_model, fault_type, solution,
+                equipment_type, fault_analysis, repair_process, lessons_learned,
+                tags, author_id, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                case_id,                                  # id
+                request.title,                            # title
+                request.fault_description,                # description
+                request.equipment_model,                  # device_model
+                "",                                       # fault_type（请求中无此字段，留空保持兼容）
+                request.repair_result,                    # solution
+                request.equipment_type,                   # equipment_type
+                request.fault_analysis,                   # fault_analysis
+                request.repair_process,                   # repair_process
+                request.lessons_learned,                  # lessons_learned
+                json.dumps(request.tags, ensure_ascii=False) if request.tags else "",  # tags
+                current_user["id"],                       # author_id
+                "pending_review",                         # status
+                now,                                      # created_at
+                now,                                      # updated_at
+            ),
         )
         conn.commit()
 
@@ -167,7 +184,7 @@ async def list_cases(
     offset = (page - 1) * page_size
     cursor = conn.execute(
         f"""SELECT id, title, description, device_model, fault_type, solution,
-                   status, created_at, updated_at
+                   equipment_type, status, created_at, updated_at
             FROM cases {where_clause}
             ORDER BY created_at DESC LIMIT ? OFFSET ?""",
         params + [page_size, offset],
@@ -182,6 +199,7 @@ async def list_cases(
             "device_model": row["device_model"],
             "fault_type": row["fault_type"],
             "solution": row["solution"],
+            "equipment_type": row.get("equipment_type", ""),
             "status": row["status"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -228,6 +246,7 @@ async def get_case(case_id: str):
             "device_model": row["device_model"],
             "fault_type": row["fault_type"],
             "solution": row["solution"],
+            "equipment_type": row.get("equipment_type", ""),
             "fault_analysis": row["fault_analysis"] if "fault_analysis" in row.keys() else "",
             "repair_process": row["repair_process"] if "repair_process" in row.keys() else "",
             "lessons_learned": row["lessons_learned"] if "lessons_learned" in row.keys() else "",
@@ -398,7 +417,7 @@ async def search_cases(request: CaseSearchRequest):
         offset = (request.page - 1) * request.page_size
         cursor = conn.execute(
             f"""SELECT id, title, description, device_model, fault_type, solution,
-                       status, created_at
+                       equipment_type, status, created_at
                 FROM cases {where_clause}
                 ORDER BY created_at DESC LIMIT ? OFFSET ?""",
             params + [request.page_size, offset],
@@ -413,6 +432,7 @@ async def search_cases(request: CaseSearchRequest):
                 "device_model": row["device_model"],
                 "fault_type": row["fault_type"],
                 "solution": row["solution"],
+                "equipment_type": row.get("equipment_type", ""),
                 "status": row["status"],
                 "created_at": row["created_at"],
             })

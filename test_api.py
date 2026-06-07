@@ -1,37 +1,27 @@
-import sys
-sys.path.insert(0, '.')
+import requests
 import json
-from unittest.mock import patch
-from app.api.admin import router
-from app.api.auth import hash_password
-
-# 直接测试数据库
 from app.models.database import get_database
+from datetime import datetime, timezone, timedelta
+import secrets
+
 db = get_database()
 conn = db.get_connection()
+token = secrets.token_hex(32)
+expires = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+admin = conn.execute("SELECT id FROM users WHERE role = 'admin' LIMIT 1").fetchone()
+if admin:
+    conn.execute("INSERT INTO auth_tokens (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)", (token, admin["id"], expires, datetime.now().isoformat()))
+    conn.commit()
+    print(f"Token: {token}")
 
-# 查看用户数据
-users = conn.execute("SELECT id, username, role, is_active, status FROM users").fetchall()
-print("=== Users ===")
-for user in users:
-    print(f"  {dict(user)}")
+    headers = {"Authorization": f"Bearer {token}"}
 
-# 查看日志数据
-logs = conn.execute("SELECT * FROM logs LIMIT 3").fetchall()
-print("\n=== Logs (sample) ===")
-for log in logs:
-    print(f"  {dict(log)}")
+    r = requests.get("http://localhost:8000/api/v1/knowledge-graph/available-documents", headers=headers)
+    print("Available documents:")
+    print(json.dumps(r.json(), indent=2, ensure_ascii=False))
 
-# 测试 list_users 方法
-print("\n=== Testing db.list_users() ===")
-result = db.list_users(page=1, page_size=20)
-print(f"Result keys: {result.keys()}")
-print(f"Users: {result['users']}")
-print(f"Total: {result['total']}")
-
-# 测试 get_logs 方法
-print("\n=== Testing db.get_logs() ===")
-result = db.get_logs(page=1, page_size=50)
-print(f"Result keys: {result.keys()}")
-print(f"Logs: {result['logs']}")
-print(f"Total: {result['total']}")
+    r2 = requests.get("http://localhost:8000/api/v1/knowledge-graph/stats", headers=headers)
+    print("\nStats:")
+    print(json.dumps(r2.json(), indent=2, ensure_ascii=False))
+else:
+    print("NO ADMIN")

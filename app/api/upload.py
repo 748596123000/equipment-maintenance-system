@@ -183,6 +183,21 @@ def _process_document(document_id: str, filename: str, file_path: str, category:
                 full_text_parts.append(content.strip())
 
         full_text = "\n".join(full_text_parts)
+
+        # 文本层为空时（PDF 扫描件），用图片描述段落作为 fallback 内容
+        # 否则状态会被设为 failed，导致文档无法预览
+        if not full_text.strip():
+            image_desc_parts = []
+            for para in all_paragraphs:
+                meta = para.get("metadata") or {}
+                if meta.get("type") == "image":
+                    content = (para.get("content") or "").strip()
+                    if content:
+                        image_desc_parts.append(content)
+            if image_desc_parts:
+                full_text = "\n\n".join(image_desc_parts)
+                logger.info(f"文档 {filename} 文本层为空，使用 {len(image_desc_parts)} 个图片描述段落作为 fallback")
+
         if not full_text.strip():
             logger.warning(f"文档 {filename} 未提取到文本内容")
             conn = db.get_connection()
@@ -310,10 +325,34 @@ def _save_document_images(db, document_id: str, parse_result: dict):
         logger.error(f"保存文档图片信息失败: {e}", exc_info=True)
 
 
+def _start_image_description_process(document_id: str):
+    try:
+        import multiprocessing
+        from app.core.image_description_worker import run_image_descriptions
+
+        p = multiprocessing.Process(
+            target=run_image_descriptions,
+            args=(document_id,),
+            daemon=True,
+        )
+        p.start()
+        logger.info(f"已启动独立进程生成图片描述: document_id={document_id}, pid={p.pid}")
+    except Exception as mp_err:
+        logger.warning(f"独立进程启动失败，回退到线程模式: {mp_err}")
+        desc_thread = threading.Thread(
+            target=_generate_image_descriptions_background,
+            args=(document_id,),
+            daemon=True,
+        )
+        desc_thread.start()
+
+
 def _process_document_background(document_id: str, filename: str, file_path: str, category: str):
     try:
         _process_document(document_id, filename, file_path, category)
         logger.info(f"文档后台处理完成: {document_id}")
+
+        _start_image_description_process(document_id)
     except Exception as e:
         logger.error(f"文档后台处理失败: {document_id}, 错误: {e}", exc_info=True)
         try:
@@ -326,6 +365,58 @@ def _process_document_background(document_id: str, filename: str, file_path: str
             conn.commit()
         except Exception as db_err:
             logger.error(f"更新文档失败状态时出错: {document_id}, 错误: {db_err}")
+
+
+def _generate_image_descriptions_background(document_id: str):
+    db = get_database()
+    conn = db.get_connection()
+
+    rows = conn.execute(
+        "SELECT id, image_path, image_format, page_number, image_index FROM document_images WHERE document_id = ? AND ai_analyzed = 0",
+        (document_id,),
+    ).fetchall()
+
+    if not rows:
+        return
+
+    total = len(rows)
+    logger.info(f"开始后台生成图片描述: document_id={document_id}, 待处理={total}")
+
+    try:
+        from app.services.vision_service import get_vision_service
+        vision = get_vision_service()
+    except Exception as e:
+        logger.warning(f"视觉模型不可用，跳过图片描述生成: {e}")
+        return
+
+    for idx, row in enumerate(rows):
+        img_id, image_path, image_format, page_number, image_index = row
+        try:
+            if not image_path or not os.path.exists(image_path):
+                continue
+
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+
+            if not image_bytes or len(image_bytes) < 100:
+                continue
+
+            description = vision.describe_image(image_bytes, image_format or "png")
+
+            if description:
+                conn.execute(
+                    "UPDATE document_images SET ai_description = ?, ai_analyzed = 1 WHERE id = ?",
+                    (description, img_id),
+                )
+                conn.commit()
+                logger.info(f"图片描述生成完成: {idx + 1}/{total}, 页{page_number}图{image_index + 1}")
+            else:
+                logger.debug(f"图片描述为空: 页{page_number}图{image_index + 1}")
+
+        except Exception as e:
+            logger.warning(f"图片描述生成失败: 页{page_number}图{image_index + 1}, 错误: {e}")
+
+    logger.info(f"图片描述后台生成完成: document_id={document_id}, 共处理={total}")
 
 
 def _save_and_register_streamed(file_path: str, file_size: int, ext: str,
@@ -809,6 +900,64 @@ async def complete_document(
             "document_id": document_id,
             "status": "completed",
         }
+    }
+
+
+@router.post("/{document_id}/generate-descriptions", summary="生成文档图片AI描述")
+async def generate_image_descriptions(
+    document_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_database()
+    doc = db.get_document_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    conn = db.get_connection()
+    unanalyzed = conn.execute(
+        "SELECT COUNT(*) FROM document_images WHERE document_id = ? AND ai_analyzed = 0",
+        (document_id,),
+    ).fetchone()[0]
+
+    if unanalyzed == 0:
+        return {"code": 200, "message": "所有图片已有AI描述", "data": {"pending": 0}}
+
+    _start_image_description_process(document_id)
+
+    return {
+        "code": 200,
+        "message": f"已开始生成 {unanalyzed} 张图片的AI描述",
+        "data": {"pending": unanalyzed},
+    }
+
+
+@router.get("/{document_id}/description-progress", summary="查询图片描述生成进度")
+async def get_description_progress(
+    document_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_database()
+    conn = db.get_connection()
+
+    total = conn.execute(
+        "SELECT COUNT(*) FROM document_images WHERE document_id = ?",
+        (document_id,),
+    ).fetchone()[0]
+
+    analyzed = conn.execute(
+        "SELECT COUNT(*) FROM document_images WHERE document_id = ? AND ai_analyzed = 1",
+        (document_id,),
+    ).fetchone()[0]
+
+    return {
+        "code": 200,
+        "message": "查询成功",
+        "data": {
+            "total": total,
+            "analyzed": analyzed,
+            "pending": total - analyzed,
+            "progress": round(analyzed / total * 100, 1) if total > 0 else 100,
+        },
     }
 
 

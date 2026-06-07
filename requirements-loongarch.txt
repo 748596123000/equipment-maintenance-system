@@ -1,0 +1,40 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+sqlalchemy
+bcrypt
+python-jose[cryptography]
+python-multipart
+itsdangerous
+tenacity
+chromadb
+duckdb
+pdfplumber
+python-docx
+openpyxl
+python-pptx
+pillow
+beautifulsoup4
+pymupdf
+jieba
+langchain
+langchain-community
+dashscope
+openai
+gradio-client
+httpx
+aiohttp
+requests
+jinja2
+cachetools
+tqdm
+
+# 注意: 以下包在LoongArch上需要特殊处理
+# torch - 需要从源码编译或使用龙芯社区版本
+# sentence-transformers - 依赖torch
+# transformers - 可选，用于本地模型
+# onnxruntime - 无LoongArch预编译包
+# hf-xet - 无LoongArch预编译包
+# propcache - 可能需要从源码编译

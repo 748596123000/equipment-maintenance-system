@@ -1,6 +1,8 @@
 import logging
 import os
+import platform
 import shutil
+import subprocess
 import threading
 from typing import Dict, List, Optional
 
@@ -14,7 +16,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-AVAILABLE_MODELS = [
+# 检测 LoongArch 架构
+_ARCH = platform.machine().lower()
+_IS_LOONGARCH = "loongarch" in _ARCH or "loong64" in _ARCH
+
+# GGUF 模型保存目录
+_GGUF_MODEL_DIR = os.path.expanduser("~/models")
+
+# ── 标准架构（x86/ARM）模型列表 ──
+AVAILABLE_MODELS_X86 = [
     {
         "id": "Qwen/Qwen2-VL-2B-Instruct",
         "name": "Qwen2-VL-2B",
@@ -49,7 +59,97 @@ AVAILABLE_MODELS = [
     },
 ]
 
+# ── LoongArch 架构模型列表（GGUF 格式，llama.cpp 可用） ──
+AVAILABLE_MODELS_LOONGARCH = [
+    {
+        "id": "gguf/Qwen2.5-7B-Instruct-Q4_K_M",
+        "name": "Qwen2.5-7B-Instruct (GGUF)",
+        "type": "llm",
+        "size": "4.7GB",
+        "description": "通义千问文本大模型 GGUF 量化版，llama-server 本地推理，LoongArch 推荐",
+        "recommended": True,
+        "gguf_url": "https://modelscope.cn/models/qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.5-7b-instruct-q4_k_m.gguf",
+        "gguf_file": "qwen2.5-7b-instruct-q4_k_m.gguf",
+    },
+    {
+        "id": "gguf/Qwen2.5-3B-Instruct-Q4_K_M",
+        "name": "Qwen2.5-3B-Instruct (GGUF)",
+        "type": "llm",
+        "size": "2.0GB",
+        "description": "通义千问文本大模型3B GGUF 量化版，内存占用小，适合低配机器",
+        "recommended": False,
+        "gguf_url": "https://modelscope.cn/models/qwen/Qwen2.5-3B-Instruct-GGUF/resolve/master/qwen2.5-3b-instruct-q4_k_m.gguf",
+        "gguf_file": "qwen2.5-3b-instruct-q4_k_m.gguf",
+    },
+    {
+        "id": "gguf/Qwen2.5-14B-Instruct-Q4_K_M",
+        "name": "Qwen2.5-14B-Instruct (GGUF)",
+        "type": "llm",
+        "size": "8.7GB",
+        "description": "通义千问文本大模型14B GGUF 量化版，精度更高，需较大内存",
+        "recommended": False,
+        "gguf_url": "https://modelscope.cn/models/qwen/Qwen2.5-14B-Instruct-GGUF/resolve/master/qwen2.5-14b-instruct-q4_k_m.gguf",
+        "gguf_file": "qwen2.5-14b-instruct-q4_k_m.gguf",
+    },
+    {
+        "id": "gguf/Qwen2-VL-2B-Instruct-Q4_K_M",
+        "name": "Qwen2-VL-2B (GGUF视觉)",
+        "type": "vision",
+        "size": "1.8GB",
+        "description": "通义千问视觉语言模型2B GGUF量化版，llama.cpp多模态推理，LoongArch可用",
+        "recommended": True,
+        "gguf_url": "https://modelscope.cn/models/Qwen/Qwen2-VL-2B-Instruct-GGUF/resolve/master/qwen2-vl-2b-instruct-q4_k_m.gguf",
+        "gguf_file": "qwen2-vl-2b-instruct-q4_k_m.gguf",
+    },
+    {
+        "id": "gguf/Qwen2-VL-7B-Instruct-Q4_K_M",
+        "name": "Qwen2-VL-7B (GGUF视觉)",
+        "type": "vision",
+        "size": "5.2GB",
+        "description": "通义千问视觉语言模型7B GGUF量化版，精度更高，需较大内存",
+        "recommended": False,
+        "gguf_url": "https://modelscope.cn/models/Qwen/Qwen2-VL-7B-Instruct-GGUF/resolve/master/qwen2-vl-7b-instruct-q4_k_m.gguf",
+        "gguf_file": "qwen2-vl-7b-instruct-q4_k_m.gguf",
+    },
+    {
+        "id": "gguf/MiniCPM-V-2_6-Q4_K_M",
+        "name": "MiniCPM-V-2.6 (GGUF视觉)",
+        "type": "vision",
+        "size": "5.0GB",
+        "description": "面壁智能多模态大模型GGUF量化版，中文OCR能力优秀",
+        "recommended": False,
+        "gguf_url": "https://modelscope.cn/models/OpenBMB/MiniCPM-V-2_6-gguf/resolve/master/minicpmv-2_6-q4_k_m.gguf",
+        "gguf_file": "minicpmv-2_6-q4_k_m.gguf",
+    },
+    {
+        "id": "PaddleOCR/PPOCRv4",
+        "name": "PPOCRv4",
+        "type": "ocr",
+        "size": "150MB",
+        "description": "PaddleOCR v4模型（LoongArch不兼容，推荐使用RapidOCR或DashScope API）",
+        "recommended": False,
+    },
+]
+
+# 根据架构选择模型列表
+AVAILABLE_MODELS = AVAILABLE_MODELS_LOONGARCH if _IS_LOONGARCH else AVAILABLE_MODELS_X86
+
 _download_tasks: Dict[str, Dict] = {}
+
+
+def _download_gguf_python(url: str, dest_path: str, task: Dict, model_id: str):
+    """使用 Python urllib 下载 GGUF 文件（无 wget/curl 时的回退方案）"""
+    import urllib.request
+    import tempfile
+
+    tmp_path = dest_path + ".tmp"
+    try:
+        urllib.request.urlretrieve(url, tmp_path)
+        os.rename(tmp_path, dest_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 
 def _get_mirror_endpoint() -> str:
@@ -94,6 +194,9 @@ def _is_package_installed(package: str) -> bool:
 def _get_model_dependencies(model_id: str) -> list:
     if model_id == "PaddleOCR/PPOCRv4":
         return ["paddleocr", "paddlepaddle"]
+    # GGUF 模型不需要 Python 依赖，llama-server 是系统级二进制
+    if model_id.startswith("gguf/"):
+        return []
     model_info = next((m for m in AVAILABLE_MODELS if m["id"] == model_id), None)
     if model_info and model_info.get("type") == "vision":
         return ["transformers", "torch", "qwen-vl-utils", "accelerate"]
@@ -123,6 +226,14 @@ def _install_dependencies(packages: list) -> bool:
 
 def _check_model_downloaded(model_id: str) -> bool:
     try:
+        # GGUF 模型：检查文件是否存在
+        if model_id.startswith("gguf/"):
+            model_info = next((m for m in AVAILABLE_MODELS if m["id"] == model_id), None)
+            if model_info and model_info.get("gguf_file"):
+                gguf_path = os.path.join(_GGUF_MODEL_DIR, model_info["gguf_file"])
+                return os.path.exists(gguf_path)
+            return False
+
         if model_id == "PaddleOCR/PPOCRv4":
             try:
                 import paddleocr
@@ -177,6 +288,60 @@ def _download_model_thread(model_id: str):
         task["status"] = "downloading"
         task["progress"] = 0
 
+        # ── GGUF 模型下载（LoongArch） ──
+        if model_id.startswith("gguf/"):
+            model_info = next((m for m in AVAILABLE_MODELS if m["id"] == model_id), None)
+            if not model_info or not model_info.get("gguf_url"):
+                raise ValueError(f"GGUF 模型信息缺失: {model_id}")
+
+            gguf_url = model_info["gguf_url"]
+            gguf_file = model_info["gguf_file"]
+            os.makedirs(_GGUF_MODEL_DIR, exist_ok=True)
+            dest_path = os.path.join(_GGUF_MODEL_DIR, gguf_file)
+
+            logger.info(f"开始下载 GGUF 模型: {gguf_url} -> {dest_path}")
+
+            # 使用 wget 或 curl 下载（支持断点续传）
+            try:
+                if shutil.which("wget"):
+                    cmd = ["wget", "-c", "-O", dest_path, gguf_url]
+                elif shutil.which("curl"):
+                    cmd = ["curl", "-L", "-C", "-", "-o", dest_path, gguf_url]
+                else:
+                    # 回退到 Python urllib
+                    _download_gguf_python(gguf_url, dest_path, task, model_id)
+                    task["status"] = "completed"
+                    task["progress"] = 100
+                    task["path"] = dest_path
+                    logger.info(f"GGUF 模型下载完成: {dest_path}")
+                    return
+
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                # 简单等待完成
+                for line in proc.stdout:
+                    logger.debug(f"download: {line.strip()}")
+                proc.wait()
+
+                if proc.returncode != 0:
+                    raise RuntimeError(f"下载命令返回非零: {proc.returncode}")
+
+                if not os.path.exists(dest_path) or os.path.getsize(dest_path) < 1024:
+                    raise RuntimeError("下载文件不存在或过小")
+
+                task["status"] = "completed"
+                task["progress"] = 100
+                task["path"] = dest_path
+                logger.info(f"GGUF 模型下载完成: {dest_path}")
+            except Exception as e:
+                raise RuntimeError(f"GGUF 下载失败: {e}")
+            return
+
+        # ── PaddleOCR 下载 ──
         if model_id == "PaddleOCR/PPOCRv4":
             import paddleocr
             ocr = paddleocr.PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
@@ -185,6 +350,7 @@ def _download_model_thread(model_id: str):
             task["progress"] = 100
             return
 
+        # ── 标准 HuggingFace 下载 ──
         from huggingface_hub import HfApi, snapshot_download
 
         endpoint = _get_mirror_endpoint()
@@ -390,9 +556,17 @@ async def delete_model(model_id: str, admin: dict = Depends(require_admin)):
         raise HTTPException(status_code=404, detail="模型未下载")
 
     try:
-        model_dir = os.path.join(_get_model_cache_dir(), "hub", f"models--{model_id.replace('/', '--')}")
-        if os.path.exists(model_dir):
-            shutil.rmtree(model_dir, ignore_errors=True)
+        # GGUF 模型：删除文件
+        if model_id.startswith("gguf/"):
+            model_info = next((m for m in AVAILABLE_MODELS if m["id"] == model_id), None)
+            if model_info and model_info.get("gguf_file"):
+                gguf_path = os.path.join(_GGUF_MODEL_DIR, model_info["gguf_file"])
+                if os.path.exists(gguf_path):
+                    os.remove(gguf_path)
+        else:
+            model_dir = os.path.join(_get_model_cache_dir(), "hub", f"models--{model_id.replace('/', '--')}")
+            if os.path.exists(model_dir):
+                shutil.rmtree(model_dir, ignore_errors=True)
 
         _download_tasks.pop(model_id, None)
 
@@ -411,6 +585,39 @@ async def set_vision_model(request: SetVisionModelRequest, admin: dict = Depends
 
     if not _check_model_downloaded(model_id):
         raise HTTPException(status_code=400, detail=f"模型未下载: {model_id}，请先下载模型")
+
+    # GGUF 视觉模型：不需要 PyTorch 依赖
+    if model_id.startswith("gguf/"):
+        model_info = next((m for m in AVAILABLE_MODELS if m["id"] == model_id), None)
+        gguf_file = model_info.get("gguf_file", "") if model_info else ""
+        gguf_path = os.path.join(_GGUF_MODEL_DIR, gguf_file) if gguf_file else ""
+
+        settings.LOCAL_VISION_MODEL = model_id
+        settings.VISION_BACKEND = "local"
+
+        # 同时设置 GGUF 路径供 vision_service 使用
+        if gguf_path and os.path.exists(gguf_path):
+            settings.LLAMA_CPP_EMBED_MODEL_PATH = gguf_path
+
+        try:
+            from app.models.database import get_database
+            db = get_database()
+            db.set_config("local_vision_model", model_id)
+            db.set_config("vision_backend", "local")
+        except Exception:
+            pass
+
+        try:
+            from app.services.vision_service import reset_vision_service
+            reset_vision_service()
+        except Exception:
+            pass
+
+        return {
+            "code": 200,
+            "message": f"视觉模型已切换为 {model_id}（GGUF），请启动 llama-server 加载此模型后使用",
+            "data": {"model_id": model_id, "backend": "local", "gguf_path": gguf_path},
+        }
 
     missing_deps = _check_vision_dependencies()
     if missing_deps:
